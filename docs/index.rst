@@ -5,8 +5,13 @@ The `Solar Dynamics Observatory <https://sdo.gsfc.nasa.gov>`_ (SDO)
 :cite:p:`Pesnell2012` is a NASA satellite which has been continuously
 observing the Sun since 2010.
 
-This Python package aims to represent SDO imagery using :mod:`named_arrays`,
-a named tensor implementation with :class:`astropy.units.Quantity` support.
+This library uses the :mod:`sunpy` package to download SDO images
+and the :mod:`aiapy` package to align and prepare the
+images to be ready for scientific analysis.
+
+While this package uses Sunpy to download the data, it does not represent SDO
+images as instances of :obj:`sunpy.map.Map`
+it represents images using :class:`named_arrays.FunctionArray`.
 
 Installation
 ============

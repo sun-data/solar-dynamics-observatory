@@ -94,5 +94,7 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'matplotlib': ('https://matplotlib.org/stable', None),
     'astropy': ('https://docs.astropy.org/en/stable/', None),
+    'sunpy': ('https://docs.sunpy.org/en/stable/', None),
+    'aiapy': ('https://aiapy.readthedocs.io/en/stable/', None),
     'named_arrays': ('https://named-arrays.readthedocs.io/en/stable/', None)
 }
