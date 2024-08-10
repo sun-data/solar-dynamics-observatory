@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solar-dynamics-observatory"
+authors = [
+    {name = "Roy T. Smart", email = "roytsmart@gmail.com"},
+]
+description = "A Python library to download and analyze images from the NASA Solar Dynamics Observatory (SDO)."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "astropy",
+    "named-arrays==0.8",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+doc = [
+    "pytest",
+    "matplotlib",
+    "graphviz",
+    "sphinx-autodoc-typehints",
+    "sphinxcontrib-bibtex",
+    "pydata-sphinx-theme",
+    "ipykernel",
+    "jupyter-sphinx",
+    "sphinx-favicon",
+]
+
+[project.urls]
+Homepage = "https://github.com/sun-data/solar-dynamics-observatory"
+Documentation = "https://sdo.readthedocs.io/en/latest"
+
+[tool.setuptools_scm]
