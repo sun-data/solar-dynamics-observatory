@@ -10,7 +10,7 @@ and the :mod:`aiapy` package to align and prepare the
 images to be ready for scientific analysis.
 
 While this package uses Sunpy to download the data, it does not represent SDO
-images as instances of :class:`sunpy.map.Map`
+images as instances of :obj:`sunpy.map.Map`
 it represents images using :class:`named_arrays.FunctionArray`.
 
 Installation
