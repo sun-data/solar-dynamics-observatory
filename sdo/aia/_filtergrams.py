@@ -151,7 +151,10 @@ class Filtergram(
                 if not file_15.is_file():
 
                     aia_map = sunpy.map.Map(file)
-                    aia_map = aiapy.calibrate.update_pointing(aia_map, pointing_table)
+                    aia_map = aiapy.calibrate.update_pointing(
+                        smap=aia_map,
+                        pointing_table=pointing_table,
+                    )
                     # aia_map = aiapy.calibrate.register(aia_map)
                     aia_map = aiapy.calibrate.normalize_exposure(aia_map)
                     aia_map.save(file_15)
