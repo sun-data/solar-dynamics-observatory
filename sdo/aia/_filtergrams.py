@@ -93,9 +93,7 @@ class Filtergram(
         elif wavelength.ndim == 1:
             axis_wavelength = wavelength.axes[0]
         else:
-            raise ValueError(
-                f"`wavelength` must be 0D or 1D, got {wavelength.shape=}"
-            )
+            raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
 
         directory = sdo.directory_default
         if not directory.exists():
@@ -380,9 +378,3 @@ class Filtergram(
             axis_detector_x=axis_detector_x,
             axis_detector_y=axis_detector_y,
         )
-
-
-
-
-
-
