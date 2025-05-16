@@ -96,14 +96,12 @@ class Filtergram(
             raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
 
         directory = sdo.directory_default
-        if not directory.exists():
-            directory.mkdir()
+        directory.mkdir(parents=True, exist_ok=True)
 
         directory_level_1 = directory / "level_1"
         directory_level_15 = directory / "level_15"
 
-        if not directory_level_15.exists():
-            directory_level_15.mkdir()
+        directory_level_15.mkdir(parents=True, exist_ok=True)
 
         time = sunpy.net.attrs.Time(time_start, time_stop)
         notify = sunpy.net.attrs.jsoc.Notify(user_email)
