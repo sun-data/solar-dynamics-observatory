@@ -243,14 +243,6 @@ class Filtergram(
             )
             hdu = hdul[index_window]
 
-            # hdu_aux = hdul[~1]
-            #
-            # detector_type = hdul[0].header[f"TDET{index_window}"]
-            #
-            # key_timedelta = "EXPTIMEF" if "FUV" in detector_type else "EXPTIMEN"
-            # timedelta = hdu_aux.data[..., hdu_aux.header[key_timedelta]] << u.s
-            # self.timedelta[index] = na.ScalarArray(timedelta, axis_detector_x)
-
             self.outputs[index] = na.ScalarArray(
                 ndarray=hdu.data << u.DN,
                 axes=tuple(shape_wcs),
@@ -363,11 +355,6 @@ class Filtergram(
 
         shape = na.broadcast_shapes(shape_base, shape_wcs)
         outputs = na.ScalarArray.empty(shape) << u.DN
-
-        shape_timedelta = shape_base | {axis_detector_x: shape_wcs[axis_detector_x]}
-        timedelta = na.ScalarArray.empty(shape_timedelta) * u.s
-
-        wavelength_center = na.ScalarArray.empty(shape_base) << u.AA
 
         return cls(
             inputs=inputs,
