@@ -111,7 +111,7 @@ class Filtergram(
             time_range=(
                 time_start - 12 * u.h,
                 time_stop + 12 * u.h,
-            )
+            ),
         )
 
         time = sunpy.net.attrs.Time(time_start, time_stop)
