@@ -33,6 +33,37 @@ API Reference
     sdo
 
 
+Examples
+========
+
+Download and display an AIA image
+
+.. jupyter-execute::
+
+    import matplotlib.pyplot as plt
+    import astropy.units as u
+    import astropy.visualization
+    import named_arrays as na
+    import sdo
+
+    images = sdo.aia.Filtergram.from_time_range(
+        time_start="2019-09-30T00:00",
+        time_stop="2019-09-30T00:00:01",
+        wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
+        user_email="roytsmart@gmail.com"
+    )
+
+    with astropy.visualization.quantity_support():
+        fig, ax = plt.subplots()
+        na.plt.pcolormesh(
+            image.inputs.position.x,
+            image.inputs.position.y,
+            C=image.outputs.value,
+            vmin=0,
+            vmax=image.outputs.value.percentile(99.9)
+        )
+
+
 Bibliography
 ============
 
