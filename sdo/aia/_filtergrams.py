@@ -156,7 +156,6 @@ class Filtergram(
                         pointing_table=pointing_table,
                     )
                     # aia_map = aiapy.calibrate.register(aia_map)
-                    aia_map = aiapy.calibrate.normalize_exposure(aia_map)
                     aia_map.save(file_15)
 
             files_wavelength = files_15
