@@ -46,6 +46,7 @@ Download and display an AIA image
     import named_arrays as na
     import sdo
 
+    # Download some images from JSOC and load into memory
     images = sdo.aia.Filtergram.from_time_range(
         time_start="2019-09-30T00:00",
         time_stop="2019-09-30T00:00:01",
@@ -53,17 +54,20 @@ Download and display an AIA image
         user_email="roytsmart@gmail.com"
     )
 
+    # Select one of the images to plot
     index = {images.axis_time: 0, images.axis_wavelength: 0}
 
+    # Plot the image
     with astropy.visualization.quantity_support():
         fig, ax = plt.subplots()
         na.plt.pcolormesh(
-            images.inputs.position.x,
-            images.inputs.position.y,
+            images.inputs.position[index],
             C=images.outputs.value[index],
             vmin=0,
-            vmax=images.outputs.value.percentile(99.9)
+            vmax=images.outputs.value.percentile(99.9),
+            ax=ax,
         )
+        ax.set_aspect("equal")
 
 
 Bibliography
