@@ -53,12 +53,14 @@ Download and display an AIA image
         user_email="roytsmart@gmail.com"
     )
 
+    index = {images.axis_time: 0, images.axis_wavelength: 0}
+
     with astropy.visualization.quantity_support():
         fig, ax = plt.subplots()
         na.plt.pcolormesh(
-            image.inputs.position.x,
-            image.inputs.position.y,
-            C=image.outputs.value,
+            images.inputs.position.x,
+            images.inputs.position.y,
+            C=images.outputs.value[index],
             vmin=0,
             vmax=image.outputs.value.percentile(99.9)
         )
