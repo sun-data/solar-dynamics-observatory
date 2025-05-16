@@ -62,7 +62,7 @@ Download and display an AIA image
             images.inputs.position.y,
             C=images.outputs.value[index],
             vmin=0,
-            vmax=image.outputs.value.percentile(99.9)
+            vmax=images.outputs.value.percentile(99.9)
         )
 
 
