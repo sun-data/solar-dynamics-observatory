@@ -7,7 +7,7 @@ import astropy.time
 import astropy.wcs
 import astropy.io.fits
 import sunpy.net.attrs
-import aiapy.calibrate
+import aiapy.calibrate.util
 import named_arrays as na
 import sdo
 
@@ -86,6 +86,9 @@ class Filtergram(
             The logical axis corresponding to changes in detector :math:`y`-coordinate.
         """
 
+        time_start = astropy.time.Time(time_start)
+        time_stop = astropy.time.Time(time_stop)
+
         wavelength = na.as_named_array(wavelength)
         if wavelength.ndim == 0:
             axis_wavelength = "wavelength"
@@ -102,6 +105,14 @@ class Filtergram(
         directory_level_15 = directory / "level_15"
 
         directory_level_15.mkdir(parents=True, exist_ok=True)
+
+        pointing_table = aiapy.calibrate.util.get_pointing_table(
+            source="JSOC",
+            time_range=(
+                time_start - 12 * u.h,
+                time_stop + 12 * u.h,
+            )
+        )
 
         time = sunpy.net.attrs.Time(time_start, time_stop)
         notify = sunpy.net.attrs.jsoc.Notify(user_email)
@@ -140,8 +151,8 @@ class Filtergram(
                 if not file_15.is_file():
 
                     aia_map = sunpy.map.Map(file)
-                    aia_map = aiapy.calibrate.update_pointing(aia_map)
-                    aia_map = aiapy.calibrate.register(aia_map)
+                    aia_map = aiapy.calibrate.update_pointing(aia_map, pointing_table)
+                    # aia_map = aiapy.calibrate.register(aia_map)
                     aia_map = aiapy.calibrate.normalize_exposure(aia_map)
                     aia_map.save(file_15)
 
