@@ -11,6 +11,11 @@ import sdo
         sdo.aia.Filtergram.from_time_range(
             time_start=astropy.time.Time("2021-09-23T06:00"),
             time_stop=astropy.time.Time("2021-09-23T06:01"),
+            wavelength=304 * u.AA,
+        ),
+        sdo.aia.Filtergram.from_time_range(
+            time_start=astropy.time.Time("2021-09-23T06:00"),
+            time_stop=astropy.time.Time("2021-09-23T06:01"),
             wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
         ),
     ],

@@ -97,7 +97,7 @@ class Filtergram(
             wavelength = wavelength.add_axes(axis_wavelength)
         elif wavelength.ndim == 1:
             axis_wavelength = wavelength.axes[0]
-        else:
+        else:  # pragma: nocover
             raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
 
         directory = sdo.directory_default
