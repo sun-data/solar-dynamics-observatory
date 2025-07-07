@@ -6,7 +6,7 @@ import sdo
     argnames="email",
     argvalues=[
         "sample@example.com",
-    ]
+    ],
 )
 def test_set_get_delete_email(email: str):
 
