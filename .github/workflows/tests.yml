@@ -7,10 +7,12 @@ on:
       - main
   pull_request:
 
+env:
+  JSOC_EMAIL: ${{ vars.JSOC_EMAIL }}
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    environment: jsoc
     strategy:
       fail-fast: false
       matrix:
