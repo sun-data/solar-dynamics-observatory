@@ -38,6 +38,12 @@ Examples
 
 Download and display an AIA image
 
+.. important::
+
+    Your email must be `registered with JSOC <http://jsoc.stanford.edu/ajax/register_email.html>`_
+    and be saved to the ``JSOC_EMAIL`` environment variable to use these
+    examples.
+
 .. jupyter-execute::
 
     import matplotlib.pyplot as plt
@@ -51,7 +57,6 @@ Download and display an AIA image
         time_start="2019-09-30T00:00",
         time_stop="2019-09-30T00:00:01",
         wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
-        user_email="roytsmart@gmail.com"
     )
 
     # Select one of the images to plot

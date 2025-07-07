@@ -1,4 +1,5 @@
 from typing import Self, Literal
+import os
 import pathlib
 import dataclasses
 import numpy as np
@@ -45,7 +46,7 @@ class Filtergram(
         time_start: str | astropy.time.Time,
         time_stop: str | astropy.time.Time,
         wavelength: u.Quantity | na.ScalarArray,
-        user_email: str,
+        user_email: None | str = None,
         series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
         axis_time: str = "time",
         axis_detector_x: str = "detector_x",
@@ -55,11 +56,10 @@ class Filtergram(
         Given a time range and a wavelength, download the corresponding
         AIA filtergram.
 
-        .. warning::
+        .. important::
 
-            To use this function, you must
-            `register your email <http://jsoc.stanford.edu/ajax/register_email.html>`_
-            with JSOC.
+            Your email must be `registered with JSOC <http://jsoc.stanford.edu/ajax/register_email.html>`_
+            to use this method.
 
         Parameters
         ----------
@@ -74,6 +74,8 @@ class Filtergram(
             An email address used to notify the user that their JSOC request
             is complete.
             This email must be registered with JSOC before using this function.
+            If :obj:`None`, the value is taken from the ``JSOC_EMAIL``
+            environment variable.
         series
             The data series to download.
             See the `sunpy documentation <https://docs.sunpy.org/en/stable/tutorial/acquiring_data/jsoc.html#querying-the-jsoc>`_
@@ -113,6 +115,9 @@ class Filtergram(
                 time_stop + 12 * u.h,
             ),
         )
+
+        if user_email is None:
+            user_email = os.environ["JSOC_EMAIL"]
 
         time = sunpy.net.attrs.Time(time_start, time_stop)
         notify = sunpy.net.attrs.jsoc.Notify(user_email)
