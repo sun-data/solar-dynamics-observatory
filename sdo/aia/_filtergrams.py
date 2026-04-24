@@ -8,7 +8,7 @@ import astropy.time
 import astropy.wcs
 import astropy.io.fits
 import sunpy.net.attrs
-import aiapy.calibrate.util
+import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
 
@@ -108,7 +108,7 @@ class Filtergram(
 
         directory_level_15.mkdir(parents=True, exist_ok=True)
 
-        pointing_table = aiapy.calibrate.util.get_pointing_table(
+        pointing_table = aiapy.calibrate.utils.get_pointing_table(
             source="JSOC",
             time_range=(
                 time_start - 12 * u.h,
