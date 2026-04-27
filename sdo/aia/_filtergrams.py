@@ -131,7 +131,7 @@ class Filtergram(
             time,
             series,
             notify,
-            segment
+            segment,
         )
 
         if limit is not None:
