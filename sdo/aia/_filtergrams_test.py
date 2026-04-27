@@ -11,7 +11,7 @@ import sdo
         sdo.aia.open(
             time_start="2021-09-23T06:00",
             wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
-            limit=1
+            limit=1,
         ),
     ],
 )
