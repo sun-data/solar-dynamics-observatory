@@ -8,17 +8,8 @@ import sdo
 @pytest.mark.parametrize(
     argnames="array",
     argvalues=[
-        sdo.aia.Filtergram.from_time_range(
-            time_start=astropy.time.Time("2021-09-23T06:00"),
-            time_stop=astropy.time.Time("2021-09-23T06:01"),
-            wavelength=304 * u.AA,
-        ),
-        sdo.aia.Filtergram.from_time_range(
-            time_start=astropy.time.Time("2021-09-23T06:00"),
-            time_stop=astropy.time.Time("2021-09-23T06:01"),
-            wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
-            limit=1,
-        ),
+        sdo.aia.open("2021-09-23T06:00"),
+        sdo.aia.open("2021-09-23T06:00", limit=1),
     ],
 )
 class TestSpectrographObservation:
