@@ -51,6 +51,7 @@ class Filtergram(
         axis_time: str = "time",
         axis_detector_x: str = "detector_x",
         axis_detector_y: str = "detector_y",
+        limit: None | int = None,
     ):
         """
         Given a time range and a wavelength, download the corresponding
@@ -86,6 +87,8 @@ class Filtergram(
             The logical axis corresponding to changes in detector :math:`x`-coordinate.
         axis_detector_y
             The logical axis corresponding to changes in detector :math:`y`-coordinate.
+        limit
+            The maximum number of files to download for each wavelength.
         """
 
         time_start = astropy.time.Time(time_start)
@@ -122,8 +125,19 @@ class Filtergram(
         time = sunpy.net.attrs.Time(time_start, time_stop)
         notify = sunpy.net.attrs.jsoc.Notify(user_email)
         segment = sunpy.net.attrs.jsoc.Segment("image")
-
         series = sunpy.net.attrs.jsoc.Series(series)
+
+        attrs = (
+            time,
+            series,
+            notify,
+            segment
+        )
+
+        if limit is not None:
+            timedelta = (time_stop - time_start).to(u.s)
+            period = timedelta / limit
+            attrs = attrs + (sunpy.net.attrs.Sample(period),)
 
         files = []
 
@@ -131,13 +145,9 @@ class Filtergram(
 
             channel = wavelength[w].ndarray
 
-            search = sunpy.net.Fido.search(
-                time,
-                series,
-                notify,
-                sunpy.net.attrs.jsoc.Wavelength(channel),
-                segment,
-            )
+            attrs_w = attrs + (sunpy.net.attrs.jsoc.Wavelength(channel),)
+
+            search = sunpy.net.Fido.search(*attrs_w)
 
             files_wavelength = sunpy.net.Fido.fetch(
                 search,
