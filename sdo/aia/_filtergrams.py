@@ -122,22 +122,19 @@ class Filtergram(
         if user_email is None:
             user_email = os.environ["JSOC_EMAIL"]
 
-        time = sunpy.net.attrs.Time(time_start, time_stop)
-        notify = sunpy.net.attrs.jsoc.Notify(user_email)
-        segment = sunpy.net.attrs.jsoc.Segment("image")
-        series = sunpy.net.attrs.jsoc.Series(series)
-
         attrs = (
-            time,
-            series,
-            notify,
-            segment,
+            sunpy.net.attrs.jsoc.Notify(user_email),
+            sunpy.net.attrs.jsoc.Segment("image"),
+            sunpy.net.attrs.jsoc.Series(series),
         )
 
         if limit is not None:
             timedelta = (time_stop - time_start).to(u.s)
+            time_start = time_start + timedelta / 2
             period = timedelta / limit
             attrs = attrs + (sunpy.net.attrs.Sample(period),)
+
+        attrs = attrs + (sunpy.net.attrs.Time(time_start, time_stop),)
 
         files = []
 
