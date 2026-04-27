@@ -1,7 +1,4 @@
 import pytest
-import astropy.units as u
-import astropy.time
-import named_arrays as na
 import sdo
 
 
