@@ -1,4 +1,6 @@
 import pytest
+import astropy.units as u
+import named_arrays as na
 import sdo
 
 
@@ -6,7 +8,11 @@ import sdo
     argnames="array",
     argvalues=[
         sdo.aia.open("2021-09-23T06:00"),
-        sdo.aia.open("2021-09-23T06:00", limit=1),
+        sdo.aia.open(
+            time_start="2021-09-23T06:00",
+            wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
+            limit=1
+        ),
     ],
 )
 class TestSpectrographObservation:
