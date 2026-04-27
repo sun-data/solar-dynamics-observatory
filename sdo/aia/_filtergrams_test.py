@@ -17,6 +17,7 @@ import sdo
             time_start=astropy.time.Time("2021-09-23T06:00"),
             time_stop=astropy.time.Time("2021-09-23T06:01"),
             wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
+            limit=1,
         ),
     ],
 )
