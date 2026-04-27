@@ -1,6 +1,5 @@
 import pytest
 import astropy.units as u
-import astropy.time
 import named_arrays as na
 import sdo
 
@@ -8,14 +7,9 @@ import sdo
 @pytest.mark.parametrize(
     argnames="array",
     argvalues=[
-        sdo.aia.Filtergram.from_time_range(
-            time_start=astropy.time.Time("2021-09-23T06:00"),
-            time_stop=astropy.time.Time("2021-09-23T06:01"),
-            wavelength=304 * u.AA,
-        ),
-        sdo.aia.Filtergram.from_time_range(
-            time_start=astropy.time.Time("2021-09-23T06:00"),
-            time_stop=astropy.time.Time("2021-09-23T06:01"),
+        sdo.aia.open("2021-09-23T06:00"),
+        sdo.aia.open(
+            time_start="2021-09-23T06:00",
             wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
             limit=1,
         ),

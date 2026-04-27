@@ -53,11 +53,7 @@ Download and display an AIA image
     import sdo
 
     # Download some images from JSOC and load into memory
-    images = sdo.aia.Filtergram.from_time_range(
-        time_start="2019-09-30T00:00",
-        time_stop="2019-09-30T00:00:01",
-        wavelength=na.ScalarArray([304] * u.AA, "wavelength"),
-    )
+    images = sdo.aia.open("2019-09-30T00:00")
 
     # Select one of the images to plot
     index = {images.axis_time: 0, images.axis_wavelength: 0}
