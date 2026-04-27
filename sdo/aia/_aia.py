@@ -8,6 +8,7 @@ __all__ = [
     "open",
 ]
 
+
 def open(
     time_start: str | astropy.time.Time,
     time_stop: None | str | astropy.time.Time = None,
