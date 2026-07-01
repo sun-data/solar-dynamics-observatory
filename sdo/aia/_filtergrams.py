@@ -97,7 +97,7 @@ class Filtergram(
             cache=cache,
         )
 
-        axis_wavelength, = set(files.shape) - {axis_time}
+        (axis_wavelength,) = set(files.shape) - {axis_time}
 
         return cls.from_fits(
             path=files,
@@ -174,7 +174,6 @@ class Filtergram(
         )
 
         for index in path.ndindex():
-
             file = path[index].ndarray
 
             hdul = astropy.io.fits.open(
