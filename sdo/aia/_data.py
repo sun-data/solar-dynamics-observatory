@@ -4,6 +4,7 @@ import pathlib
 import requests
 import astropy.units as u
 import astropy.time
+import astropy.io.fits
 import sunpy.net.attrs
 import sunpy.net.jsoc
 import aiapy.calibrate.utils
@@ -20,7 +21,7 @@ __all__ = [
 def urls(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
-    wavelength: None | u.Quantity | na.ScalarArray,
+    wavelength: u.Quantity | na.ScalarArray,
     series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
     axis_time: str = "time",
     limit: None | int = None,
@@ -48,8 +49,7 @@ def urls(
     limit
         The maximum number of files to download for each wavelength.
     cache
-        The location to cache the results of this function to avoid repeated
-        queries to JSOC.
+        The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is used.
         If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
         a new cache is created at that location.
@@ -71,7 +71,7 @@ def urls(
 def _urls(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
-    wavelength: None | u.Quantity | na.ScalarArray,
+    wavelength: u.Quantity | na.ScalarArray,
     series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
     axis_time: str = "time",
     limit: None | int = None,
@@ -152,8 +152,7 @@ def download(
     overwrite
         Boolean flag controlling whether to overwrite existing files.
     cache
-        The location to cache the results of this function to avoid repeated
-        queries to JSOC.
+        The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is used.
         If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
         a new cache is created at that location.
@@ -163,7 +162,7 @@ def download(
         cache = joblib.Memory(location=cache, verbose=False)
 
     if directory is None:
-        directory = cache.location
+        directory = cache.location or sdo.directory_default
 
     return cache.cache(_download)(
         urls=urls,
@@ -177,9 +176,6 @@ def _download(
     directory: pathlib.Path,
     overwrite: bool = False,
 ) -> na.ScalarArray:
-    if directory is None:
-        directory = sdo.directory_default
-
     directory.mkdir(parents=True, exist_ok=True)
 
     result = urls.copy()
@@ -196,7 +192,8 @@ def _download(
         path.parent.mkdir(parents=True, exist_ok=True)
 
         if overwrite or not path.exists():
-            r = requests.get(url, stream=True)
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
             with open(path, "wb") as f:
                 f.write(r.content)
 
@@ -217,8 +214,7 @@ def prep(
     files
         The array of Level 1 FITS files to convert.
     cache
-        The location to cache the results of this function to avoid repeated
-        queries to JSOC.
+        The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is used.
         If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
         a new cache is created at that location.
@@ -237,6 +233,24 @@ def _prep(
 ) -> na.ScalarArray:
     result = files.copy()
 
+    # Determine the time range spanned by all files so the pointing table only
+    # needs to be fetched from JSOC once instead of once per file.
+    times = []
+    for i in files.ndindex():
+        file = files[i].ndarray
+        with astropy.io.fits.open(file) as hdul:
+            for hdu in hdul:
+                if "DATE-OBS" in hdu.header:
+                    times.append(astropy.time.Time(hdu.header["DATE-OBS"]))
+                    break
+    time_min = min(times)
+    time_max = max(times)
+
+    pointing_table = aiapy.calibrate.utils.get_pointing_table(
+        source="JSOC",
+        time_range=(time_min - 12 * u.h, time_max + 12 * u.h),
+    )
+
     for i in files.ndindex():
         file = pathlib.Path(files[i].ndarray)
 
@@ -244,20 +258,12 @@ def _prep(
 
         aia_map = sunpy.map.Map(file)
 
-        pointing_table = aiapy.calibrate.utils.get_pointing_table(
-            source="JSOC",
-            time_range=(aia_map.date - 12 * u.h, aia_map.date + 12 * u.h),
-        )
-
         aia_map = aiapy.calibrate.update_pointing(
             smap=aia_map,
             pointing_table=pointing_table,
         )
         # aia_map = aiapy.calibrate.register(aia_map)
-        aia_map.save(
-            file_15,
-            # overwrite=True,
-        )
+        aia_map.save(file_15)
 
         result[i] = str(file_15)
 
