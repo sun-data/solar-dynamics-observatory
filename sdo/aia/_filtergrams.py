@@ -77,7 +77,7 @@ class Filtergram(
             The maximum number of files to download for each wavelength.
         """
 
-        urls = sdo.aia.urls_jsoc(
+        urls = sdo.aia.urls(
             time_start=time_start,
             time_stop=time_stop,
             wavelength=wavelength,

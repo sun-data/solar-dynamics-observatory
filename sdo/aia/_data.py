@@ -11,13 +11,13 @@ import named_arrays as na
 import sdo
 
 __all__ = [
-    "urls_jsoc",
+    "urls",
     "download",
     "prep",
 ]
 
 
-def urls_jsoc(
+def urls(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
     wavelength: None | u.Quantity | na.ScalarArray,
@@ -29,7 +29,7 @@ def urls_jsoc(
     """
     Given a time range and an array of wavelengths,
     find the URLs of the corresponding AIA observations.
-    
+
     Parameters
     ----------
     time_start
@@ -58,7 +58,7 @@ def urls_jsoc(
     if not isinstance(cache, joblib.Memory):
         cache = joblib.Memory(location=cache, verbose=False)
 
-    return cache.cache(_urls_jsoc)(
+    return cache.cache(_urls)(
         time_start=time_start,
         time_stop=time_stop,
         wavelength=wavelength,
@@ -68,7 +68,7 @@ def urls_jsoc(
     )
 
 
-def _urls_jsoc(
+def _urls(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
     wavelength: None | u.Quantity | na.ScalarArray,
@@ -76,7 +76,6 @@ def _urls_jsoc(
     axis_time: str = "time",
     limit: None | int = None,
 ) -> na.ScalarArray:
-
     time_start = astropy.time.Time(time_start)
     time_stop = astropy.time.Time(time_stop)
 
@@ -118,7 +117,6 @@ def _urls_jsoc(
         urls_w = []
 
         for row in response:
-
             url = url_base + row.get("image")
 
             urls_w.append(url)
@@ -163,7 +161,7 @@ def download(
 
     if not isinstance(cache, joblib.Memory):
         cache = joblib.Memory(location=cache, verbose=False)
-        
+
     if directory is None:
         directory = cache.location
 
@@ -179,7 +177,6 @@ def _download(
     directory: pathlib.Path,
     overwrite: bool = False,
 ) -> na.ScalarArray:
-    
     if directory is None:
         directory = sdo.directory_default
 
@@ -188,7 +185,6 @@ def _download(
     result = urls.copy()
 
     for i in urls.ndindex():
-
         url = urls[i].ndarray
 
         components = url.split("/")[3:]
@@ -239,14 +235,12 @@ def prep(
 def _prep(
     files: na.AbstractScalarArray,
 ) -> na.ScalarArray:
-
     result = files.copy()
 
     for i in files.ndindex():
-        
         file = pathlib.Path(files[i].ndarray)
 
-        file_15 = file.parent / (file.stem +"5" + file.suffix)
+        file_15 = file.parent / (file.stem + "5" + file.suffix)
 
         aia_map = sunpy.map.Map(file)
 
@@ -260,7 +254,10 @@ def _prep(
             pointing_table=pointing_table,
         )
         # aia_map = aiapy.calibrate.register(aia_map)
-        aia_map.save(file_15, overwrite=True)
+        aia_map.save(
+            file_15,
+            # overwrite=True,
+        )
 
         result[i] = str(file_15)
 
