@@ -11,7 +11,7 @@ _time_stop = "2021-09-23T06:00:12"
 _wavelength = 304 * u.AA
 
 _urls = sdo.aia.urls(
-    time_start="2021-09-23T06:00",
+    time_start=_time_start,
     time_stop=_time_stop,
     wavelength=_wavelength,
 )
