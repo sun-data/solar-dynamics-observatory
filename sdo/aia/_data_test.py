@@ -11,36 +11,37 @@ _time_stop = "2021-09-23T06:00:12"
 _wavelength = 304 * u.AA
 
 _urls = sdo.aia.urls(
-    time_start="2021-09-23T06:00", 
-    time_stop=_time_stop, 
-    wavelength=_wavelength, 
+    time_start="2021-09-23T06:00",
+    time_stop=_time_stop,
+    wavelength=_wavelength,
 )
 
 _files = sdo.aia.download(_urls)
 
+
 @pytest.mark.parametrize(
     argnames="time_start",
     argvalues=[
-        _time_start
+        _time_start,
     ],
 )
 @pytest.mark.parametrize(
     argnames="time_stop",
     argvalues=[
-        _time_stop
+        _time_stop,
     ],
 )
 @pytest.mark.parametrize(
     argnames="wavelength",
     argvalues=[
-        _wavelength
+        _wavelength,
     ],
 )
 @pytest.mark.parametrize(
     argnames="cache",
     argvalues=[
         sdo.directory_default,
-    ]
+    ],
 )
 def test_urls(
     time_start: str,
@@ -63,7 +64,7 @@ def test_urls(
     argnames="urls",
     argvalues=[
         _urls,
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     argnames="cache",
@@ -76,7 +77,7 @@ def test_download(
     cache: None | str | joblib.Memory,
 ):
     result = sdo.aia.download(urls, cache=cache)
-    
+
     for i in result.ndindex():
         path = pathlib.Path(result[i].ndarray)
         assert path.is_file()
@@ -92,7 +93,7 @@ def test_download(
     argnames="cache",
     argvalues=[
         sdo.directory_default,
-    ]
+    ],
 )
 def test_prep(
     files: na.ScalarArray,
@@ -102,7 +103,7 @@ def test_prep(
         files=files,
         cache=cache,
     )
-    
+
     for i in result.ndindex():
         path = pathlib.Path(result[i].ndarray)
         assert path.is_file()
