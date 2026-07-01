@@ -1,20 +1,19 @@
 import joblib
 from typing import Literal
-import os
 import pathlib
 import requests
-import numpy as np
 import astropy.units as u
 import astropy.time
 import sunpy.net.attrs
 import sunpy.net.jsoc
-import aiapy
+import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
 
 __all__ = [
     "urls_jsoc",
-    "download"
+    "download",
+    "prep",
 ]
 
 
@@ -22,7 +21,6 @@ def urls_jsoc(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
     wavelength: None | u.Quantity | na.ScalarArray,
-    user_email: None | str = None,
     series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
     axis_time: str = "time",
     limit: None | int = None,
@@ -41,12 +39,6 @@ def urls_jsoc(
     wavelength
         The wavelengths to download.
         Must be a valid AIA wavelength.
-    user_email
-        An email address used to notify the user that their JSOC request
-        is complete.
-        This email must be registered with JSOC before using this function.
-        If :obj:`None`, the value is taken from the ``JSOC_EMAIL``
-        environment variable.
     series
         The data series to download.
         See the `sunpy documentation <https://docs.sunpy.org/en/stable/tutorial/acquiring_data/jsoc.html#querying-the-jsoc>`_
@@ -70,7 +62,6 @@ def urls_jsoc(
         time_start=time_start,
         time_stop=time_stop,
         wavelength=wavelength,
-        user_email=user_email,
         series=series,
         axis_time=axis_time,
         limit=limit,
@@ -81,7 +72,6 @@ def _urls_jsoc(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
     wavelength: None | u.Quantity | na.ScalarArray,
-    user_email: None | str = None,
     series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
     axis_time: str = "time",
     limit: None | int = None,
@@ -99,11 +89,7 @@ def _urls_jsoc(
     else:  # pragma: nocover
         raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
 
-    if user_email is None:
-        user_email = os.environ["JSOC_EMAIL"]
-
     attrs = (
-        sunpy.net.attrs.jsoc.Notify(user_email),
         sunpy.net.attrs.jsoc.Segment("image"),
         sunpy.net.attrs.jsoc.Series(series),
     )
@@ -120,49 +106,40 @@ def _urls_jsoc(
 
     urls = []
 
+    client = sunpy.net.jsoc.JSOCClient()
+
     for w in wavelength.ndindex():
         channel = wavelength[w].ndarray
 
         attrs_w = attrs + (sunpy.net.attrs.jsoc.Wavelength(channel),)
 
-        response = sunpy.net.jsoc.search(*attrs_w)
+        response = client.search(*attrs_w)
 
         urls_w = []
 
         for row in response:
 
-            url = url_base + row[0].get("image")
+            url = url_base + row.get("image")
 
             urls_w.append(url)
 
-        urls_w = na.stack(urls_w, axis=axis_wavelength)
+        urls_w = na.stack(urls_w, axis=axis_time)
 
         urls.append(urls_w)
 
-    urls = na.stack(urls, axis=axis_time)
+    urls = na.stack(urls, axis=axis_wavelength)
 
-    return urls
+    urls = urls.transpose((axis_time, axis_wavelength))
+
+    return urls.astype(object)
 
 
 def download(
     urls: na.AbstractScalarArray,
-    cache: None | str | joblib.Memory = sdo.memory,
-) -> list[pathlib.Path]:
-
-    if not isinstance(cache, joblib.Memory):
-        cache = joblib.Memory(location=cache, verbose=False)
-
-    return cache.cache(_download)(
-        urls=urls,
-        directory=cache.location,
-    )
-
-
-def _download(
-    urls: na.AbstractScalarArray,
     directory: None | pathlib.Path = None,
     overwrite: bool = False,
-) -> list[pathlib.Path]:
+    cache: None | str | joblib.Memory = sdo.memory,
+) -> na.ScalarArray:
     """
     Download the given URLs to a specified directory.
     If `overwrite` is :obj:`False`, the file will not be downloaded if it exists.
@@ -173,10 +150,36 @@ def _download(
         The URLs to download.
     directory
         The directory to place the downloaded files.
+        If :obj:`None` (the default), the location of `cache` will be used.
     overwrite
         Boolean flag controlling whether to overwrite existing files.
-
+    cache
+        The location to cache the results of this function to avoid repeated
+        queries to JSOC.
+        If not provided, the default cache location, :attr:`sdo.memory` is used.
+        If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
+        a new cache is created at that location.
     """
+
+    if not isinstance(cache, joblib.Memory):
+        cache = joblib.Memory(location=cache, verbose=False)
+        
+    if directory is None:
+        directory = cache.location
+
+    return cache.cache(_download)(
+        urls=urls,
+        directory=directory,
+        overwrite=overwrite,
+    )
+
+
+def _download(
+    urls: na.AbstractScalarArray,
+    directory: pathlib.Path,
+    overwrite: bool = False,
+) -> na.ScalarArray:
+    
     if directory is None:
         directory = sdo.directory_default
 
@@ -186,15 +189,79 @@ def _download(
 
     for i in urls.ndindex():
 
-        url = urls[i]
+        url = urls[i].ndarray
 
-        file = directory / url.split("/")[~0]
+        components = url.split("/")[3:]
 
-        if overwrite or not file.exists():
+        file = "/".join(components)
+
+        path = directory / file
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if overwrite or not path.exists():
             r = requests.get(url, stream=True)
-            with open(file, "wb") as f:
+            with open(path, "wb") as f:
                 f.write(r.content)
 
-        result[i] = file
+        result[i] = str(path)
+
+    return result
+
+
+def prep(
+    files: na.AbstractScalarArray,
+    cache: None | str | joblib.Memory = sdo.memory,
+) -> na.ScalarArray:
+    """
+    Convert an array of FITS files from Level 1 to Level 1.5 using :mod:`aiapy`.
+
+    Parameters
+    ----------
+    files
+        The array of Level 1 FITS files to convert.
+    cache
+        The location to cache the results of this function to avoid repeated
+        queries to JSOC.
+        If not provided, the default cache location, :attr:`sdo.memory` is used.
+        If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
+        a new cache is created at that location.
+    """
+
+    if not isinstance(cache, joblib.Memory):
+        cache = joblib.Memory(location=cache, verbose=False)
+
+    return cache.cache(_prep)(
+        files=files,
+    )
+
+
+def _prep(
+    files: na.AbstractScalarArray,
+) -> na.ScalarArray:
+
+    result = files.copy()
+
+    for i in files.ndindex():
+        
+        file = pathlib.Path(files[i].ndarray)
+
+        file_15 = file.parent / (file.stem +"5" + file.suffix)
+
+        aia_map = sunpy.map.Map(file)
+
+        pointing_table = aiapy.calibrate.utils.get_pointing_table(
+            source="JSOC",
+            time_range=(aia_map.date - 12 * u.h, aia_map.date + 12 * u.h),
+        )
+
+        aia_map = aiapy.calibrate.update_pointing(
+            smap=aia_map,
+            pointing_table=pointing_table,
+        )
+        # aia_map = aiapy.calibrate.register(aia_map)
+        aia_map.save(file_15, overwrite=True)
+
+        result[i] = str(file_15)
 
     return result

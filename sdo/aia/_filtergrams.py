@@ -1,5 +1,5 @@
+import joblib
 from typing import Self, Literal
-import os
 import pathlib
 import dataclasses
 import numpy as np
@@ -46,21 +46,16 @@ class Filtergram(
         time_start: str | astropy.time.Time,
         time_stop: str | astropy.time.Time,
         wavelength: u.Quantity | na.ScalarArray,
-        user_email: None | str = None,
         series: Literal["aia.lev1_euv_12s", "aia.lev1_uv_24s"] = "aia.lev1_euv_12s",
         axis_time: str = "time",
         axis_detector_x: str = "detector_x",
         axis_detector_y: str = "detector_y",
         limit: None | int = None,
+        cache: None | str | joblib.Memory = sdo.memory,
     ):
         """
         Given a time range and a wavelength, download the corresponding
         AIA filtergram.
-
-        .. important::
-
-            Your email must be `registered with JSOC <http://jsoc.stanford.edu/ajax/register_email.html>`_
-            to use this method.
 
         Parameters
         ----------
@@ -71,12 +66,6 @@ class Filtergram(
         wavelength
             The wavelengths to download.
             Must be a valid AIA wavelength.
-        user_email
-            An email address used to notify the user that their JSOC request
-            is complete.
-            This email must be registered with JSOC before using this function.
-            If :obj:`None`, the value is taken from the ``JSOC_EMAIL``
-            environment variable.
         series
             The data series to download.
             See the `sunpy documentation <https://docs.sunpy.org/en/stable/tutorial/acquiring_data/jsoc.html#querying-the-jsoc>`_
@@ -91,96 +80,27 @@ class Filtergram(
             The maximum number of files to download for each wavelength.
         """
 
-        time_start = astropy.time.Time(time_start)
-        time_stop = astropy.time.Time(time_stop)
-
-        wavelength = na.as_named_array(wavelength)
-        if wavelength.ndim == 0:
-            axis_wavelength = "wavelength"
-            wavelength = wavelength.add_axes(axis_wavelength)
-        elif wavelength.ndim == 1:
-            axis_wavelength = wavelength.axes[0]
-        else:  # pragma: nocover
-            raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
-
-        directory = sdo.directory_default
-        directory.mkdir(parents=True, exist_ok=True)
-
-        directory_level_1 = directory / "level_1"
-        directory_level_15 = directory / "level_15"
-
-        directory_level_15.mkdir(parents=True, exist_ok=True)
-
-        pointing_table = aiapy.calibrate.utils.get_pointing_table(
-            source="JSOC",
-            time_range=(
-                time_start - 12 * u.h,
-                time_stop + 12 * u.h,
-            ),
+        urls = sdo.aia.urls_jsoc(
+            time_start=time_start,
+            time_stop=time_stop,
+            wavelength=wavelength,
+            series=series,
+            axis_time=axis_time,
+            limit=limit,
+            cache=cache,
         )
 
-        if user_email is None:
-            user_email = os.environ["JSOC_EMAIL"]
-
-        attrs = (
-            sunpy.net.attrs.jsoc.Notify(user_email),
-            sunpy.net.attrs.jsoc.Segment("image"),
-            sunpy.net.attrs.jsoc.Series(series),
+        files = sdo.aia.download(
+            urls=urls,
+            cache=cache,
         )
 
-        if limit is not None:
-            timedelta = (time_stop - time_start).to(u.s)
-            time_start = time_start + timedelta / 2
-            period = timedelta / limit
-            attrs = attrs + (sunpy.net.attrs.Sample(period),)
+        files = sdo.aia.prep(
+            files=files,
+            cache=cache,
+        )
 
-        attrs = attrs + (sunpy.net.attrs.Time(time_start, time_stop),)
-
-        files = []
-
-        for w in wavelength.ndindex():
-
-            channel = wavelength[w].ndarray
-
-            attrs_w = attrs + (sunpy.net.attrs.jsoc.Wavelength(channel),)
-
-            search = sunpy.net.Fido.search(*attrs_w)
-
-            files_wavelength = sunpy.net.Fido.fetch(
-                search,
-                path=directory_level_1,
-                progress=False,
-            )
-
-            files_wavelength = sorted(files_wavelength)
-
-            files_15 = []
-            for file in files_wavelength:
-
-                file_15 = directory_level_15 / pathlib.Path(file).name
-                files_15.append(file_15)
-
-                if not file_15.is_file():
-
-                    aia_map = sunpy.map.Map(file)
-                    aia_map = aiapy.calibrate.update_pointing(
-                        smap=aia_map,
-                        pointing_table=pointing_table,
-                    )
-                    # aia_map = aiapy.calibrate.register(aia_map)
-                    aia_map.save(file_15)
-
-            files_wavelength = files_15
-
-            files_wavelength = np.array(files_wavelength)
-
-            files_wavelength = na.ScalarArray(files_wavelength, axes=axis_time)
-
-            files.append(files_wavelength)
-
-        files = na.stack(files, axis=axis_wavelength)
-
-        files = files.transpose((axis_time, axis_wavelength))
+        axis_wavelength, = set(files.shape) - {axis_time}
 
         return cls.from_fits(
             path=files,
