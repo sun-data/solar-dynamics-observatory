@@ -2,13 +2,10 @@ import joblib
 from typing import Self, Literal
 import pathlib
 import dataclasses
-import numpy as np
 import astropy.units as u
 import astropy.time
 import astropy.wcs
 import astropy.io.fits
-import sunpy.net.attrs
-import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
 
