@@ -38,12 +38,6 @@ Examples
 
 Download and display an AIA image
 
-.. important::
-
-    Your email must be `registered with JSOC <http://jsoc.stanford.edu/ajax/register_email.html>`_
-    and be saved to the ``JSOC_EMAIL`` environment variable to use these
-    examples.
-
 .. jupyter-execute::
 
     import matplotlib.pyplot as plt
