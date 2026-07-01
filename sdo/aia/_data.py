@@ -256,14 +256,16 @@ def _prep(
 
         file_15 = file.parent / (file.stem + "5" + file.suffix)
 
-        aia_map = sunpy.map.Map(file)
+        if not file_15.is_file():
 
-        aia_map = aiapy.calibrate.update_pointing(
-            smap=aia_map,
-            pointing_table=pointing_table,
-        )
-        # aia_map = aiapy.calibrate.register(aia_map)
-        aia_map.save(file_15)
+            aia_map = sunpy.map.Map(file)
+
+            aia_map = aiapy.calibrate.update_pointing(
+                smap=aia_map,
+                pointing_table=pointing_table,
+            )
+            # aia_map = aiapy.calibrate.register(aia_map)
+            aia_map.save(file_15)
 
         result[i] = str(file_15)
 

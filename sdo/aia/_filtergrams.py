@@ -75,6 +75,11 @@ class Filtergram(
             The logical axis corresponding to changes in detector :math:`y`-coordinate.
         limit
             The maximum number of files to download for each wavelength.
+        cache
+            The location to cache the results of this method.
+            If not provided, the default cache location, :attr:`sdo.memory` is used.
+            If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
+            a new cache is created at that location.
         """
 
         urls = sdo.aia.urls(
