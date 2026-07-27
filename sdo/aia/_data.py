@@ -204,6 +204,7 @@ def _download(
 
 def prep(
     files: na.AbstractScalarArray,
+    register: bool = False,
     cache: None | str | joblib.Memory = sdo.memory,
 ) -> na.ScalarArray:
     """
@@ -213,6 +214,12 @@ def prep(
     ----------
     files
         The array of Level 1 FITS files to convert.
+    register
+        Boolean flag controlling whether the images are also registered using
+        :func:`aiapy.calibrate.register`, which rotates each image to solar
+        north up and scales it to a common plate scale.
+        Registered and unregistered results are saved to different files,
+        so both can coexist in the same cache.
     cache
         The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is used.
@@ -225,11 +232,13 @@ def prep(
 
     return cache.cache(_prep)(
         files=files,
+        register=register,
     )
 
 
 def _prep(
     files: na.AbstractScalarArray,
+    register: bool = False,
 ) -> na.ScalarArray:
     result = files.copy()
 
@@ -254,7 +263,11 @@ def _prep(
     for i in files.ndindex():
         file = pathlib.Path(files[i].ndarray)
 
-        file_15 = file.parent / (file.stem + "5" + file.suffix)
+        stem = file.stem + "5"
+        if register:
+            stem = stem + "_registered"
+
+        file_15 = file.parent / (stem + file.suffix)
 
         if not file_15.is_file():
 
@@ -264,7 +277,8 @@ def _prep(
                 smap=aia_map,
                 pointing_table=pointing_table,
             )
-            # aia_map = aiapy.calibrate.register(aia_map)
+            if register:
+                aia_map = aiapy.calibrate.register(aia_map)
             aia_map.save(file_15)
 
         result[i] = str(file_15)

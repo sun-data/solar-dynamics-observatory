@@ -20,6 +20,7 @@ def open(
     axis_detector_x: str = "detector_x",
     axis_detector_y: str = "detector_y",
     limit: None | int = None,
+    register: bool = False,
     cache: None | str | joblib.Memory = sdo.memory,
 ) -> Filtergram:
     """
@@ -49,6 +50,10 @@ def open(
         The logical axis corresponding to changes in detector :math:`y`-coordinate.
     limit
         The maximum number of files to download for each wavelength.
+    register
+        Boolean flag controlling whether the images are registered using
+        :func:`aiapy.calibrate.register`, which rotates each image to solar
+        north up and scales it to a common plate scale.
     cache
         The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is used.
@@ -69,5 +74,6 @@ def open(
         axis_detector_x=axis_detector_x,
         axis_detector_y=axis_detector_y,
         limit=limit,
+        register=register,
         cache=cache,
     )
