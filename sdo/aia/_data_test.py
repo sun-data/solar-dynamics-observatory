@@ -90,6 +90,13 @@ def test_download(
     ],
 )
 @pytest.mark.parametrize(
+    argnames="register",
+    argvalues=[
+        False,
+        True,
+    ],
+)
+@pytest.mark.parametrize(
     argnames="cache",
     argvalues=[
         sdo.directory_default,
@@ -97,10 +104,12 @@ def test_download(
 )
 def test_prep(
     files: na.ScalarArray,
+    register: bool,
     cache: None | str | joblib.Memory,
 ):
     result = sdo.aia.prep(
         files=files,
+        register=register,
         cache=cache,
     )
 
