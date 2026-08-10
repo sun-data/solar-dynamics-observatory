@@ -1,7 +1,6 @@
 import joblib
 from typing import Literal
 import pathlib
-import requests
 import astropy.units as u
 import astropy.time
 import astropy.io.fits
@@ -10,6 +9,7 @@ import sunpy.net.jsoc
 import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
+from .._data import download
 
 __all__ = [
     "urls",
@@ -130,76 +130,6 @@ def _urls(
     urls = urls.transpose((axis_time, axis_wavelength))
 
     return urls.astype(object)
-
-
-def download(
-    urls: na.AbstractScalarArray,
-    directory: None | pathlib.Path = None,
-    overwrite: bool = False,
-    cache: None | str | joblib.Memory = sdo.memory,
-) -> na.ScalarArray:
-    """
-    Download the given URLs to a specified directory.
-    If `overwrite` is :obj:`False`, the file will not be downloaded if it exists.
-
-    Parameters
-    ----------
-    urls
-        The URLs to download.
-    directory
-        The directory to place the downloaded files.
-        If :obj:`None` (the default), the location of `cache` will be used.
-    overwrite
-        Boolean flag controlling whether to overwrite existing files.
-    cache
-        The location to cache the results of this function.
-        If not provided, the default cache location, :attr:`sdo.memory` is used.
-        If :obj:`None`, no caching is performed, and if `cache` is a pathlike,
-        a new cache is created at that location.
-    """
-
-    if not isinstance(cache, joblib.Memory):
-        cache = joblib.Memory(location=cache, verbose=False)
-
-    if directory is None:
-        directory = cache.location or sdo.directory_default
-
-    return cache.cache(_download)(
-        urls=urls,
-        directory=directory,
-        overwrite=overwrite,
-    )
-
-
-def _download(
-    urls: na.AbstractScalarArray,
-    directory: pathlib.Path,
-    overwrite: bool = False,
-) -> na.ScalarArray:
-    directory.mkdir(parents=True, exist_ok=True)
-
-    result = urls.copy()
-
-    for i in urls.ndindex():
-        url = urls[i].ndarray
-
-        components = url.split("/")[3:]
-
-        file = "/".join(components)
-
-        path = directory / file
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        if overwrite or not path.exists():
-            r = requests.get(url, timeout=60)
-            r.raise_for_status()
-            with open(path, "wb") as f:
-                f.write(r.content)
-
-        result[i] = str(path)
-
-    return result
 
 
 def prep(
