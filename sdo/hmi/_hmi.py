@@ -6,6 +6,7 @@ import astropy.time
 import named_arrays as na
 import sdo
 from . import Magnetogram
+from ._data import _cadence
 
 __all__ = [
     "open",
@@ -67,7 +68,6 @@ def open(
     .. jupyter-execute::
 
         import matplotlib.pyplot as plt
-        import numpy as np
         import named_arrays as na
         import sdo
 
@@ -75,9 +75,11 @@ def open(
 
         b = a.outputs[{a.axis_time: 0}]
 
+        # Saturated well below the strongest fields, since otherwise the
+        # active regions are the only thing with any contrast at all.
         fig, ax = plt.subplots(constrained_layout=True)
         na.plt.imshow(
-            C=b.value,
+            b.value,
             axis_x=a.axis_detector_x,
             axis_y=a.axis_detector_y,
             ax=ax,
@@ -140,25 +142,6 @@ def open(
         axis_detector_x=axis_detector_x,
         axis_detector_y=axis_detector_y,
     )
-
-
-def _cadence(series: str) -> u.Quantity:
-    """
-    How long one image of a series stands for.
-
-    The series is named for its cadence, so the name is where this comes
-    from.
-
-    Parameters
-    ----------
-    series
-        The data series, named for its cadence.
-    """
-    suffix = series.rsplit("_", 1)[-1]
-    if suffix.endswith("s") and suffix[:-1].isdigit():
-        return int(suffix[:-1]) * u.s
-    else:  # pragma: nocover
-        return 45 * u.s
 
 
 def _index_nearest(

@@ -21,6 +21,15 @@ _time_stop = "2021-09-23T06:01:00"
     ],
 )
 @pytest.mark.parametrize(
+    argnames="limit",
+    argvalues=[
+        None,
+        # Fewer images than asked for are in the range, which JSOC expresses
+        # as a sampling period of no slots and then divides by.
+        3,
+    ],
+)
+@pytest.mark.parametrize(
     argnames="cache",
     argvalues=[
         sdo.directory_default,
@@ -29,13 +38,18 @@ _time_stop = "2021-09-23T06:01:00"
 def test_search(
     time_start: str,
     time_stop: str,
+    limit: None | int,
     cache: None | str | joblib.Memory,
 ):
     result = sdo.hmi.search(
         time_start=time_start,
         time_stop=time_stop,
+        limit=limit,
         cache=cache,
     )
+
+    if limit is not None:
+        assert result["url"].size <= limit
 
     for key in result:
         assert isinstance(result[key], na.AbstractScalarArray)

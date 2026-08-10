@@ -29,6 +29,25 @@ _keys_wcs = (
 )
 
 
+def _cadence(series: str) -> u.Quantity:
+    """
+    How long one image of a series stands for.
+
+    The series is named for its cadence, so the name is where this comes
+    from.
+
+    Parameters
+    ----------
+    series
+        The data series, named for its cadence.
+    """
+    suffix = series.rsplit("_", 1)[-1]
+    if suffix.endswith("s") and suffix[:-1].isdigit():
+        return int(suffix[:-1]) * u.s
+    else:  # pragma: nocover
+        return 45 * u.s
+
+
 def search(
     time_start: str | astropy.time.Time,
     time_stop: str | astropy.time.Time,
@@ -106,7 +125,11 @@ def _search(
     if limit is not None:
         timedelta = (time_stop - time_start).to(u.s)
         time_start = time_start + timedelta / 2
-        period = timedelta / limit
+        # No shorter than one cadence, since JSOC expresses a sampling
+        # period as a whole number of slots and rounds to the nearest one:
+        # asking for more images than the range holds rounds down to a step
+        # of no slots at all, which it then divides by.
+        period = max(timedelta / limit, _cadence(series))
         attrs = attrs + (sunpy.net.attrs.Sample(period),)
 
     attrs = attrs + (sunpy.net.attrs.Time(time_start, time_stop),)
