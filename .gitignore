@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Build metadata written by `pip install -e .`
+*.egg-info/
+build/
+dist/
+
+# Written by Sphinx: `_autosummary` is the API reference generated from the
+# docstrings, so it is a copy of the source rather than a thing of its own.
+docs/_build/
+docs/_autosummary/
+jupyter_execute/
+
+# Written by pytest and by the coverage step of the test workflow
+.pytest_cache/
+.coverage
+coverage.xml
+
+# Written by Jupyter alongside a notebook that has been opened
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
