@@ -183,9 +183,17 @@ class Magnetogram(
             crval.position.x[index] = keywords["CRVAL1"][index].ndarray * unit_position
             crval.position.y[index] = keywords["CRVAL2"][index].ndarray * unit_position
 
+            # One less than the FITS keyword, which counts pixels from one
+            # where :class:`named_arrays.AbstractWcsVector` counts them from
+            # zero. Without this every image sits one pixel, about half an
+            # arcsecond, from where it belongs.
             crpix = self.inputs.crpix
-            crpix.components[axis_detector_x][index] = keywords["CRPIX1"][index].ndarray
-            crpix.components[axis_detector_y][index] = keywords["CRPIX2"][index].ndarray
+            crpix.components[axis_detector_x][index] = (
+                keywords["CRPIX1"][index].ndarray - 1
+            )
+            crpix.components[axis_detector_y][index] = (
+                keywords["CRPIX2"][index].ndarray - 1
+            )
 
             cdelt = self.inputs.cdelt
             cdelt.position.x[index] = keywords["CDELT1"][index].ndarray * unit_position
