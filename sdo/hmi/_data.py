@@ -139,6 +139,16 @@ def _search(
 
     response = client.search(*attrs)
 
+    # HMI has gaps, and a range which falls in one comes back empty. Said
+    # here rather than left to `na.stack`, which would raise an `IndexError`
+    # from an empty list several frames further down and name neither the
+    # series nor the range which found nothing.
+    if len(response) == 0:
+        raise ValueError(
+            f"no images of `{series}` were found between "
+            f"{time_start.isot} and {time_stop.isot}"
+        )
+
     # The column holding the path is named for the segment, where AIA calls
     # its one segment `image`.
     result = {

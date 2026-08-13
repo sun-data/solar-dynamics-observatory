@@ -191,3 +191,18 @@ def test_download_cache_str(tmp_path: pathlib.Path):
 
     for i in result.ndindex():
         assert pathlib.Path(result[i].ndarray).is_file()
+
+
+def test_search_empty():
+    """
+    A range which holds no images says so.
+
+    HMI has gaps, and `sdo.hmi.open` searches a range only one cadence wide,
+    so this is reachable by asking for a moment during one.
+    """
+    with pytest.raises(ValueError, match="no images of"):
+        sdo.hmi.search(
+            time_start="2010-01-01T00:00:00",
+            time_stop="2010-01-01T00:01:00",
+            cache=None,
+        )
