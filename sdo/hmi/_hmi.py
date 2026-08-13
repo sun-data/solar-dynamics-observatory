@@ -54,6 +54,8 @@ def open(
         :math:`y`-coordinate.
     limit
         The maximum number of files to download.
+        Ignored when `time_stop` is :obj:`None`, since exactly one image is
+        downloaded then whatever this says.
     cache
         The location to cache the results of this function.
         If not provided, the default cache location, :attr:`sdo.memory` is
@@ -113,13 +115,17 @@ def open(
     # are downloaded rather than after.
     time_start = astropy.time.Time(time_start)
 
+    # Without `limit`, which has nothing to say in a branch which returns one
+    # image however it is set, and which would take away the very record this
+    # is here to choose between: it narrows the range to make room for its
+    # sampling period, and the candidate on the near side of `time_start`
+    # falls outside what is left.
     found = sdo.hmi.search(
         time_start=time_start,
         time_stop=time_start + _cadence(series),
         series=series,
         segment=segment,
         axis_time=axis_time,
-        limit=limit,
         cache=cache,
     )
 

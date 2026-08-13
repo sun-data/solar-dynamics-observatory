@@ -117,3 +117,26 @@ def test_position_against_fits_convention():
 
         assert np.isclose(result.x.ndarray.to_value(u.arcsec), x, atol=1e-6)
         assert np.isclose(result.y.ndarray.to_value(u.arcsec), y, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    argnames="limit",
+    argvalues=[
+        None,
+        1,
+    ],
+)
+def test_open_one_ignores_limit(limit: None | int):
+    """
+    Asking for one image gives the same one however `limit` is set.
+
+    A limited search narrows the range to fit its sampling period, which
+    drops the candidate on the near side of the time asked for. The image
+    nearest that time is then no longer among the ones to choose from.
+    """
+    result = sdo.hmi.open(_time_start, limit=limit)
+
+    assert result.outputs.shape[result.axis_time] == 1
+
+    expected = sdo.hmi.open(_time_start)
+    assert np.all(result.inputs.time.ndarray == expected.inputs.time.ndarray)
