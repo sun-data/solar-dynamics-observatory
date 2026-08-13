@@ -1,6 +1,9 @@
 import pytest
 import pathlib
 import joblib
+import numpy as np
+import astropy.time
+import astropy.units as u
 import named_arrays as na
 import sdo
 
@@ -117,3 +120,74 @@ def test_download(
     for i in result.ndindex():
         path = pathlib.Path(result[i].ndarray)
         assert path.is_file()
+
+
+def test_search_limit_spans_the_range():
+    """
+    A limited search must sample the whole range, not the end of it.
+
+    Asking for a sampling period is not the same as asking for fewer images
+    out of the second half, which is what shifting the start of the range to
+    its middle would give.
+    """
+    time_start = astropy.time.Time("2021-09-23T06:00:00")
+    time_stop = time_start + 1 * u.hour
+    limit = 4
+
+    found = sdo.hmi.search(
+        time_start=time_start,
+        time_stop=time_stop,
+        limit=limit,
+    )
+
+    time = astropy.time.Time(np.ravel(found["DATE-OBS"].ndarray))
+
+    assert time.size <= limit
+
+    # The first image has to lie within the first of the `limit` parts the
+    # range is divided into, or the beginning of it went unsampled.
+    fraction = (time[0] - time_start) / (time_stop - time_start)
+    assert fraction < 1 / limit
+
+
+@pytest.mark.parametrize(
+    argnames="limit",
+    argvalues=[
+        1,
+        2,
+    ],
+)
+def test_search_limit_is_a_maximum(limit: int):
+    """
+    Never more images than were asked for, however JSOC rounds the range.
+
+    A range one cadence wide holds one image and comes back holding the two
+    which straddle it, so this is a real question rather than a formality.
+    """
+    time_start = astropy.time.Time("2021-09-23T06:00:00")
+
+    found = sdo.hmi.search(
+        time_start=time_start,
+        time_stop=time_start + 45 * u.s,
+        limit=limit,
+    )
+
+    assert found["url"].size <= limit
+
+
+def test_download_cache_str(tmp_path: pathlib.Path):
+    """
+    A cache asked for as a string is a place, and has to be usable as one.
+
+    :class:`joblib.Memory` keeps `location` as it was handed over, so a
+    string stays a string all the way to where a directory is made.
+    """
+    urls = sdo.hmi.urls(
+        time_start=_time_start,
+        time_stop=_time_stop,
+    )
+
+    result = sdo.download(urls, cache=str(tmp_path / "cache"))
+
+    for i in result.ndindex():
+        assert pathlib.Path(result[i].ndarray).is_file()

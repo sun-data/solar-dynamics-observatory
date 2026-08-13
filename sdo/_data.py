@@ -42,7 +42,11 @@ def download(
         cache = joblib.Memory(location=cache, verbose=False)
 
     if directory is None:
-        directory = cache.location or sdo.directory_default
+        # `joblib.Memory` keeps `location` as it was given, so a cache asked
+        # for as a string leaves a string here, and `_download` wants
+        # somewhere it can call `mkdir` on.
+        location = cache.location
+        directory = pathlib.Path(location) if location else sdo.directory_default
 
     return cache.cache(_download)(
         urls=urls,

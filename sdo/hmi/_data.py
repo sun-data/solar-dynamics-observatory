@@ -124,7 +124,6 @@ def _search(
 
     if limit is not None:
         timedelta = (time_stop - time_start).to(u.s)
-        time_start = time_start + timedelta / 2
         # No shorter than one cadence, since JSOC expresses a sampling
         # period as a whole number of slots and rounds to the nearest one:
         # asking for more images than the range holds rounds down to a step
@@ -156,6 +155,13 @@ def _search(
             [row.get(key) for row in response],
             axis=axis_time,
         )
+
+    # JSOC snaps each end of a time range to the nearest slot, so a range
+    # asked to hold one image can come back holding the two which straddle
+    # it. `limit` is a maximum, so the extras are dropped here rather than
+    # left for the caller to discover.
+    if limit is not None:
+        result = {k: result[k][{axis_time: slice(None, limit)}] for k in result}
 
     return result
 
