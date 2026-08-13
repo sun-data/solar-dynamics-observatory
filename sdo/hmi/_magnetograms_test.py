@@ -1,5 +1,6 @@
 import pytest
 import astropy.time
+import astropy.wcs
 import numpy as np
 import astropy.units as u
 import named_arrays as na
@@ -140,3 +141,61 @@ def test_open_one_ignores_limit(limit: None | int):
 
     expected = sdo.hmi.open(_time_start)
     assert np.all(result.inputs.time.ndarray == expected.inputs.time.ndarray)
+
+
+def test_position_against_astropy_wcs():
+    """
+    The coordinates must be the ones :mod:`astropy.wcs` makes of the same
+    keywords.
+
+    :func:`test_position_against_fits_convention` says that the formula is
+    written out correctly; this says that an implementation which knows
+    nothing about this one agrees, which is a different question.
+
+    The keywords have to be taken from the record which was actually used.
+    HMI's roll and pointing drift between records: forty five seconds apart,
+    `CROTA2` moves by a ten thousandth of a degree and `CRPIX1` by a
+    hundredth of a pixel, which is enough to look like an error in the
+    coordinates if the wrong record is compared against.
+    """
+    time_start = astropy.time.Time(_time_start)
+
+    found = sdo.hmi.search(
+        time_start=time_start,
+        time_stop=time_start + 45 * u.s,
+    )
+    array = sdo.hmi.open(_time_start)
+
+    time_found = astropy.time.Time(np.ravel(found["DATE-OBS"].ndarray))
+    time_used = astropy.time.Time(np.ravel(array.inputs.time.ndarray))[0]
+    index = {"time": int(np.argmin(np.abs((time_found - time_used).to_value(u.s))))}
+
+    def keyword(name):
+        return float(found[name][index].ndarray)
+
+    wcs = astropy.wcs.WCS(naxis=2)
+    wcs.wcs.ctype = ["HPLN", "HPLT"]
+    wcs.wcs.cunit = ["arcsec", "arcsec"]
+    wcs.wcs.crpix = [keyword("CRPIX1"), keyword("CRPIX2")]
+    wcs.wcs.crval = [keyword("CRVAL1"), keyword("CRVAL2")]
+    wcs.wcs.cdelt = [keyword("CDELT1"), keyword("CDELT2")]
+    wcs.wcs.crota = [0, keyword("CROTA2")]
+
+    position = array.inputs[{array.axis_time: 0}].position
+
+    for index_x, index_y in ((0, 0), (2048, 2048), (4096, 2048), (4096, 4096)):
+
+        # Astropy counts pixels from zero here, and the vertex of index `j`
+        # lies half a pixel below the center of pixel `j`.
+        expected = wcs.wcs_pix2world([[index_x - 0.5, index_y - 0.5]], 0)[0]
+        expected = (expected * u.deg).to_value(u.arcsec)
+
+        result = position[
+            {
+                array.axis_detector_x: index_x,
+                array.axis_detector_y: index_y,
+            }
+        ]
+
+        assert np.isclose(result.x.ndarray.to_value(u.arcsec), expected[0], atol=1e-9)
+        assert np.isclose(result.y.ndarray.to_value(u.arcsec), expected[1], atol=1e-9)
