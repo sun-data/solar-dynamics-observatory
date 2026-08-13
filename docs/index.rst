@@ -70,7 +70,7 @@ Download and display an HMI magnetogram
 .. jupyter-execute::
 
     # Download the magnetogram closest to the given time
-    magnetogram = sdo.hmi.open("2019-09-30T00:00")
+    magnetogram = sdo.hmi.open("2024-05-10T18:00")
 
     index = {magnetogram.axis_time: 0}
 

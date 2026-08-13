@@ -73,12 +73,13 @@ def open(
         import named_arrays as na
         import sdo
 
-        a = sdo.hmi.open("2019-09-30 18:08:00")
+        a = sdo.hmi.open("2024-05-10 18:00:00")
 
         b = a.outputs[{a.axis_time: 0}]
 
-        # Saturated well below the strongest fields, since otherwise the
-        # active regions are the only thing with any contrast at all.
+        # A day with a large active region on it. Saturated far below the
+        # field in its spots, which reaches thousands of gauss, so that the
+        # network over the rest of the disk can be seen at all.
         fig, ax = plt.subplots(constrained_layout=True)
         na.plt.imshow(
             b.value,
