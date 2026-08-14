@@ -65,6 +65,30 @@ Download and display an AIA image
         ax.set_aspect("equal")
 
 
+Download and display an HMI magnetogram
+
+.. jupyter-execute::
+
+    # Download the magnetogram closest to the given time
+    magnetogram = sdo.hmi.open("2024-05-10T18:00")
+
+    index = {magnetogram.axis_time: 0}
+
+    # Plot the line-of-sight magnetic field, saturated well below the
+    # strongest fields so that the quiet Sun is visible at all
+    with astropy.visualization.quantity_support():
+        fig, ax = plt.subplots()
+        na.plt.pcolormesh(
+            magnetogram.inputs.position[index],
+            C=magnetogram.outputs.value[index],
+            cmap="gray",
+            vmin=-100,
+            vmax=+100,
+            ax=ax,
+        )
+        ax.set_aspect("equal")
+
+
 Bibliography
 ============
 
