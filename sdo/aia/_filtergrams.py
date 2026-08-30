@@ -125,13 +125,12 @@ class Filtergram(
         path: pathlib.Path | na.ScalarArray[pathlib.Path],
         wavelength: u.Quantity | na.ScalarArray,
         axis_time: str = "time",
-        axis_wavelength: str = "wavelength",
         axis_detector_x: str = "detector_x",
         axis_detector_y: str = "detector_y",
     ) -> Self:
         """
         Given a single FITS file or an array of FITS files with the same OBSID,
-        construct a SpectrographObservation object.
+        construct a FiltergramObservation object.
 
         Parameters
         ----------
@@ -141,13 +140,20 @@ class Filtergram(
             The spectral window to load.
         axis_time
             The logical axis corresponding to changes in time.
-        axis_wavelength
-            The logical axis corresponding to changes in wavelength.
         axis_detector_x
             The logical axis corresponding to changes in detector :math:`x`-coordinate.
         axis_detector_y
             The logical axis corresponding to changes in detector :math:`y`-coordinate.
         """
+
+        wavelength = na.as_named_array(wavelength)
+        if wavelength.ndim == 0:
+            axis_wavelength = "wavelength"
+            wavelength = wavelength.add_axes(axis_wavelength)
+        elif wavelength.ndim == 1:
+            axis_wavelength = wavelength.axes[0]
+        else:  # pragma: nocover
+            raise ValueError(f"`wavelength` must be 0D or 1D, got {wavelength.shape=}")
 
         path = na.asarray(path)
         shape_base = path.shape
