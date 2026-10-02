@@ -24,3 +24,20 @@ This package is published on PyPI and can be installed using pip
 ```bash
 pip install solar-dynamics-observatory
 ```
+
+## Citation
+
+If you use solar-dynamics-observatory in your research, please cite it.
+The citation metadata is kept in [`CITATION.cff`](https://github.com/sun-data/solar-dynamics-observatory/blob/main/CITATION.cff),
+which the "Cite this repository" button on GitHub can export as BibTeX or APA.
+Please include the version of solar-dynamics-observatory that you used,
+which is given by `importlib.metadata.version("solar-dynamics-observatory")`.
+
+```bibtex
+@software{solar-dynamics-observatory,
+  author = {Smart, Roy T. and Parker, Jacob D.},
+  title = {solar-dynamics-observatory},
+  version = {X.Y.Z},
+  url = {https://github.com/sun-data/solar-dynamics-observatory},
+}
+```

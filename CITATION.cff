@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use solar-dynamics-observatory in your research, please cite it using these metadata."
+type: software
+title: solar-dynamics-observatory
+abstract: >-
+  solar-dynamics-observatory, imported as sdo, is a Python library for
+  downloading and analyzing observations from NASA's Solar Dynamics
+  Observatory (SDO). It searches the Joint Science Operations Center (JSOC)
+  using sunpy and downloads filtergrams from the Atmospheric Imaging Assembly
+  (AIA) and magnetograms from the Helioseismic and Magnetic Imager (HMI),
+  caching the results so that repeated requests are served from disk. AIA
+  images can be prepared for scientific analysis with aiapy, which rotates
+  each image to solar north up and scales it to a common plate scale. Rather
+  than sunpy maps, observations are represented as named-arrays function
+  arrays, so a sequence of images has named axes and physical units, and
+  carries the time, wavelength, and sky position of every pixel.
+authors:
+  - family-names: Smart
+    given-names: Roy T.
+    orcid: "https://orcid.org/0000-0002-9997-5515"
+  - family-names: Parker
+    given-names: Jacob D.
+    orcid: "https://orcid.org/0000-0001-8732-8284"
+repository-code: "https://github.com/sun-data/solar-dynamics-observatory"
+url: "https://sdo.readthedocs.io"
+license: BSD-3-Clause
+keywords:
+  - Solar Dynamics Observatory
+  - AIA
+  - HMI
+  - solar physics
+  - data access
