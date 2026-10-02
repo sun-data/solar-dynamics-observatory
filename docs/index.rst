@@ -89,6 +89,28 @@ Download and display an HMI magnetogram
         ax.set_aspect("equal")
 
 
+Citation
+========
+
+If you use :mod:`sdo` in your research, please cite it.
+The citation metadata is kept in
+`CITATION.cff <https://github.com/sun-data/solar-dynamics-observatory/blob/main/CITATION.cff>`_,
+which the "Cite this repository" button on the
+`GitHub page <https://github.com/sun-data/solar-dynamics-observatory>`_
+can export as BibTeX or APA.
+Please include the version of :mod:`sdo` that you used,
+which is given by ``importlib.metadata.version("solar-dynamics-observatory")``.
+
+.. code-block:: bibtex
+
+    @software{solar-dynamics-observatory,
+      author = {Smart, Roy T. and Parker, Jacob D.},
+      title = {solar-dynamics-observatory},
+      version = {X.Y.Z},
+      url = {https://github.com/sun-data/solar-dynamics-observatory},
+    }
+
+
 Bibliography
 ============
 
