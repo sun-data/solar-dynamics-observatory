@@ -38,11 +38,15 @@ doc = [
     "ipykernel",
     "jupyter-sphinx",
     "sphinx-favicon",
+    "utu>=0.3",
 ]
 
 [project.urls]
 Homepage = "https://github.com/sun-data/solar-dynamics-observatory"
 Documentation = "https://sdo.readthedocs.io/en/latest"
+
+[tool.setuptools.package-data]
+"sdo.aia" = ["data/*.ecsv"]
 
 [tool.setuptools_scm]
 

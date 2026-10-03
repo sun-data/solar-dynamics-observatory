@@ -2,6 +2,7 @@ import joblib
 from typing import Self, Literal
 import pathlib
 import dataclasses
+import numpy as np
 import astropy.units as u
 import astropy.time
 import astropy.wcs
@@ -25,6 +26,9 @@ class Filtergram(
     A representation of an AIA image sequence using any number of filters.
     """
 
+    timedelta: u.Quantity | na.AbstractScalar = 0 * u.s
+    """The exposure time of each image."""
+
     axis_time: str = "time"
     """The logical axis corresponding to changes in time."""
 
@@ -36,6 +40,21 @@ class Filtergram(
 
     axis_detector_y: str = "detector_y"
     """The logical axis corresponding to changes in detector :math:`y`-coordinate."""
+
+    def _getitem(
+        self,
+        item: dict[str, int | slice | na.AbstractArray] | na.AbstractArray,
+    ) -> Self:
+        """
+        Index the images, and the exposure time of each of them with them,
+        which :class:`named_arrays.FunctionArray` would otherwise copy whole.
+        """
+        result = super()._getitem(item)
+        if result is NotImplemented or not isinstance(item, dict):
+            return result
+        timedelta = na.as_named_array(self.timedelta)
+        index = {ax: item[ax] for ax in item if ax in timedelta.shape}
+        return dataclasses.replace(result, timedelta=timedelta[index])
 
     @classmethod
     def from_time_range(
@@ -170,11 +189,6 @@ class Filtergram(
         shape_wcs = wcs_prototype.array_shape
         shape_wcs = {ax: sz for ax, sz in zip(axes_wcs, shape_wcs)}
 
-        index_max = {
-            axis_detector_x: slice(None, shape_wcs[axis_detector_x]),
-            axis_detector_y: slice(None, shape_wcs[axis_detector_y]),
-        }
-
         self = cls.empty(
             shape_base=shape_base,
             shape_wcs=shape_wcs,
@@ -193,13 +207,31 @@ class Filtergram(
             )
             hdu = hdul[index_window]
 
-            self.outputs[index] = na.ScalarArray(
+            data = na.ScalarArray(
                 ndarray=hdu.data << u.DN,
                 axes=tuple(shape_wcs),
-            )[index_max]
+            )
+
+            # Registration with aiapy leaves some channels a pixel or two
+            # smaller than others, with the center of the Sun at the center of
+            # each, so each image is centered in the array of the first, and
+            # its reference pixel is moved with it. That keeps its coordinates
+            # and puts every registered channel on the same grid.
+            offset = {a: (shape_wcs[a] - data.shape[a]) // 2 for a in shape_wcs}
+            index_out: dict[str, int | slice] = dict(index)
+            index_in: dict[str, slice] = dict()
+            for a in shape_wcs:
+                num = min(shape_wcs[a], data.shape[a])
+                index_out[a] = slice(max(offset[a], 0), max(offset[a], 0) + num)
+                index_in[a] = slice(max(-offset[a], 0), max(-offset[a], 0) + num)
+            if any(offset.values()):
+                self.outputs[index] = np.nan * u.DN
+            self.outputs[index_out] = data[index_in]
 
             time = astropy.time.Time(hdu.header["DATE-OBS"]).jd
             self.inputs.time[index] = time
+
+            self.timedelta[index] = hdu.header["EXPTIME"] * u.s
 
             wcs = astropy.wcs.WCS(hdu).wcs
 
@@ -207,9 +239,17 @@ class Filtergram(
             crval.position.x[index] = wcs.crval[~ix] << u.deg
             crval.position.y[index] = wcs.crval[~iy] << u.deg
 
+            # One less than the FITS keyword, which counts pixels from one
+            # where :class:`named_arrays.AbstractWcsVector` counts them from
+            # zero, as in :mod:`sdo.hmi`. Without this every image sits one
+            # pixel, 0.6 arcseconds, from where it belongs.
             crpix = self.inputs.crpix
-            crpix.components[axis_detector_x][index] = wcs.crpix[~ix]
-            crpix.components[axis_detector_y][index] = wcs.crpix[~iy]
+            crpix.components[axis_detector_x][index] = (
+                wcs.crpix[~ix] - 1 + offset[axis_detector_x]
+            )
+            crpix.components[axis_detector_y][index] = (
+                wcs.crpix[~iy] - 1 + offset[axis_detector_y]
+            )
 
             cdelt = self.inputs.cdelt
             cdelt.position.x[index] = wcs.cdelt[~ix] << u.deg
@@ -309,7 +349,7 @@ class Filtergram(
         return cls(
             inputs=inputs,
             outputs=outputs,
-            # timedelta=timedelta,
+            timedelta=na.ScalarArray.zeros(shape_base) << u.s,
             axis_time=axis_time,
             axis_wavelength=axis_wavelength,
             axis_detector_x=axis_detector_x,

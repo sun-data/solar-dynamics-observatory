@@ -99,5 +99,6 @@ intersphinx_mapping = {
     'astropy': ('https://docs.astropy.org/en/stable/', None),
     'sunpy': ('https://docs.sunpy.org/en/stable/', None),
     'aiapy': ('https://aiapy.readthedocs.io/en/stable/', None),
-    'named_arrays': ('https://named-arrays.readthedocs.io/en/stable/', None)
+    'named_arrays': ('https://named-arrays.readthedocs.io/en/stable/', None),
+    'utu': ('https://utu.readthedocs.io/en/latest/', None),
 }

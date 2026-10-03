@@ -89,6 +89,15 @@ Download and display an HMI magnetogram
         ax.set_aspect("equal")
 
 
+Tutorials
+=========
+
+.. toctree::
+    :maxdepth: 1
+
+    tutorials/dem
+
+
 Citation
 ========
 

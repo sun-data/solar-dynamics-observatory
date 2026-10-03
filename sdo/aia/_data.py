@@ -172,23 +172,10 @@ def _prep(
 ) -> na.ScalarArray:
     result = files.copy()
 
-    # Determine the time range spanned by all files so the pointing table only
-    # needs to be fetched from JSOC once instead of once per file.
-    times = []
-    for i in files.ndindex():
-        file = files[i].ndarray
-        with astropy.io.fits.open(file) as hdul:
-            for hdu in hdul:
-                if "DATE-OBS" in hdu.header:
-                    times.append(astropy.time.Time(hdu.header["DATE-OBS"]))
-                    break
-    time_min = min(times)
-    time_max = max(times)
-
-    pointing_table = aiapy.calibrate.utils.get_pointing_table(
-        source="JSOC",
-        time_range=(time_min - 12 * u.h, time_max + 12 * u.h),
-    )
+    # The copy of the JSOC pointing table LMSAL keeps for the whole mission,
+    # synced daily and cached by aiapy, so that preparing images does not
+    # depend on the JSOC answering a query in time.
+    pointing_table = aiapy.calibrate.utils.get_pointing_table(source="lmsal")
 
     for i in files.ndindex():
         file = pathlib.Path(files[i].ndarray)
