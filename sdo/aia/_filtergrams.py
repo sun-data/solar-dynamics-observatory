@@ -1,5 +1,5 @@
 import joblib
-from typing import Self, Literal
+from typing import Self, Literal, cast
 import pathlib
 import dataclasses
 import numpy as np
@@ -48,13 +48,81 @@ class Filtergram(
         """
         Index the images, and the exposure time of each of them with them,
         which :class:`named_arrays.FunctionArray` would otherwise copy whole.
+
+        Selecting images and cropping them, with integers and slices, is done
+        on the WCS, without computing the coordinates of every pixel, which
+        :class:`named_arrays.FunctionArray` would: for six full-disk images
+        that is about 5 GB.
         """
-        result = super()._getitem(item)
-        if result is NotImplemented or not isinstance(item, dict):
-            return result
-        timedelta = na.as_named_array(self.timedelta)
-        index = {ax: item[ax] for ax in item if ax in timedelta.shape}
-        return dataclasses.replace(result, timedelta=timedelta[index])
+        if isinstance(item, dict) and self._is_crop(item):
+            return self._crop(item)
+        result = cast(Self, super()._getitem(item))
+        if isinstance(item, dict) and result is not NotImplemented:
+            timedelta = cast(na.AbstractScalarArray, na.as_named_array(self.timedelta))
+            index = {ax: item[ax] for ax in item if ax in timedelta.shape}
+            result = dataclasses.replace(result, timedelta=timedelta[index])
+        return result
+
+    def _is_crop(self, item: dict[str, int | slice | na.AbstractArray]) -> bool:
+        """
+        Whether ``item`` only selects images, with integers or slices, and
+        crops them, with slices of unit step along the detector.
+        """
+        axes_detector = (self.axis_detector_x, self.axis_detector_y)
+        for axis, index in item.items():
+            if axis in axes_detector:
+                if not (isinstance(index, slice) and index.step in (None, 1)):
+                    return False
+            elif not isinstance(index, (int, np.integer, slice)):
+                return False
+        return True
+
+    def _crop(self, item: dict[str, int | slice | na.AbstractArray]) -> Self:
+        """
+        Select images and crop them on the WCS: the parameters of each image
+        are indexed like its data, and the reference pixel moves by the start
+        of the crop.
+        """
+        inputs = self.inputs
+        shape = self.outputs.shape
+        axes_detector = (self.axis_detector_x, self.axis_detector_y)
+
+        index_base = {
+            axis: index
+            for axis, index in item.items()
+            if axis in shape and axis not in axes_detector
+        }
+        index_outputs = cast(dict[str, int | slice], dict(index_base))
+        shape_wcs = dict(inputs.shape_wcs)
+        crpix = dict(inputs.crpix.components)
+        for axis in axes_detector:
+            index = item.get(axis)
+            if isinstance(index, slice):
+                start, stop, _ = index.indices(shape[axis])
+                stop = max(start, stop)
+                index_outputs[axis] = slice(start, stop)
+                shape_wcs[axis] = stop - start + 1
+                crpix[axis] = crpix[axis] - start
+
+        timedelta = cast(na.AbstractScalarArray, na.as_named_array(self.timedelta))
+
+        return dataclasses.replace(
+            self,
+            inputs=dataclasses.replace(
+                inputs,
+                time=inputs.time[index_base],
+                wavelength=inputs.wavelength[index_base],
+                crval=inputs.crval[index_base],
+                crpix=na.CartesianNdVectorArray(
+                    components={a: c[index_base] for a, c in crpix.items()},
+                ),
+                cdelt=inputs.cdelt[index_base],
+                pc=inputs.pc[index_base],
+                shape_wcs=shape_wcs,
+            ),
+            outputs=self.outputs[index_outputs],
+            timedelta=timedelta[index_base],
+        )
 
     @classmethod
     def from_time_range(

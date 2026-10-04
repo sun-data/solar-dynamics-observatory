@@ -25,6 +25,7 @@ def _values(a: na.AbstractArray) -> np.ndarray:
     argvalues=[
         ([94, 131, 171, 193, 211, 335] * u.AA, dict(temperature=101, wavelength=6)),
         (304 * u.AA, dict(temperature=101, wavelength=1)),
+        (na.ScalarArray(171 * u.AA), dict(temperature=101, wavelength=1)),
         (
             na.ScalarArray([171, 193] * u.AA, axes="channel"),
             dict(temperature=101, channel=2),
@@ -106,3 +107,19 @@ def test_temperature_response_corrections() -> None:
 def test_temperature_response_invalid(kwargs: dict) -> None:
     with pytest.raises(ValueError):
         sdo.aia.temperature_response(**kwargs)
+
+
+def test_temperature_response_default_table() -> None:
+    """
+    Without a correction table, the version 10 table SolarSoft uses is
+    fetched, and gives what passing it does.
+    """
+    time = astropy.time.Time("2024-05-10T18:00")
+    found = sdo.aia.temperature_response(171 * u.AA, time=time, eve=True)
+    expected = sdo.aia.temperature_response(
+        171 * u.AA,
+        time=time,
+        eve=True,
+        correction_table=_correction_table,
+    )
+    assert np.all(_values(found.outputs) == _values(expected.outputs))
