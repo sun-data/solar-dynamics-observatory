@@ -218,15 +218,19 @@ over each.
 The whole DEM in one false-color image, made with :mod:`named_arrays.colorsynth`.
 Temperature is mapped onto the visible spectrum, from violet for the coolest
 plasma to red for the hottest, and each pixel is colored as if the DEM were
-the spectrum of the light it emits. The DEM at each temperature is scaled by
-its own 99.5th percentile, so the color of a pixel shows which temperatures
-are strongest there relative to the rest of the region. Only the
-temperatures the six channels constrain are shown,
-:math:`\log_{10} T` from 5.6 to 7.2.
+the spectrum of the light it emits. Every temperature shares one scale, up
+to the 99.5th percentile of the whole DEM, so the brightness of a pixel is how
+much plasma it has and the color is at what temperature. Most of the plasma
+of the region is at 2 to 3 MK, which comes out green, and the loops at its
+core are hotter, yellow to red. Only the temperatures the six channels
+constrain are shown, :math:`\log_{10} T` from 5.6 to 7.2.
 
 .. jupyter-execute::
 
     constrained = dem[dict(temperature=slice(2, 35))]
+
+    # in units of 10^28 cm^-5, so that the colorbar needs no offset
+    dem_28 = (constrained.outputs / (1e28 / u.cm**5)).to(u.dimensionless_unscaled)
 
     with astropy.visualization.quantity_support():
         fig, axs = plt.subplots(
@@ -238,16 +242,12 @@ temperatures the six channels constrain are shown,
         colorbar = na.plt.rgbmesh(
             np.log10(constrained.inputs / u.K),
             position,
-            C=constrained.outputs,
+            C=dem_28,
             axis_wavelength="temperature",
             ax=axs[0],
             norm=np.sqrt,
             vmin=0,
-            vmax=np.nanpercentile(
-                constrained.outputs,
-                q=99.5,
-                axis=("detector_x", "detector_y"),
-            ),
+            vmax=np.nanpercentile(dem_28, q=99.5),
         )
         na.plt.pcolormesh(
             C=colorbar,
@@ -257,8 +257,7 @@ temperatures the six channels constrain are shown,
         axs[0].set_aspect("equal")
         axs[0].set_xlabel("helioprojective $x$ (arcsec)")
         axs[0].set_ylabel("helioprojective $y$ (arcsec)")
-        axs[1].set_xticks([])
-        axs[1].set_xlabel("DEM")
+        axs[1].set_xlabel(r"DEM ($10^{28}\,\mathrm{cm^{-5}}$)")
         axs[1].set_ylabel(r"$\log_{10} T$")
         axs[1].yaxis.tick_right()
         axs[1].yaxis.set_label_position("right")
