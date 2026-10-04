@@ -215,6 +215,54 @@ over each.
             label=f"emission measure ({em[r].unit:latex_inline})",
         )
 
+The whole DEM in one false-color image, made with :mod:`named_arrays.colorsynth`.
+Temperature is mapped onto the visible spectrum, from violet for the coolest
+plasma to red for the hottest, and each pixel is colored as if the DEM were
+the spectrum of the light it emits. The DEM at each temperature is scaled by
+its own 99.5th percentile, so the color of a pixel shows which temperatures
+are strongest there relative to the rest of the region. Only the
+temperatures the six channels constrain are shown,
+:math:`\log_{10} T` from 5.6 to 7.2.
+
+.. jupyter-execute::
+
+    constrained = dem[dict(temperature=slice(2, 35))]
+
+    with astropy.visualization.quantity_support():
+        fig, axs = plt.subplots(
+            ncols=2,
+            figsize=(8, 7),
+            gridspec_kw=dict(width_ratios=[0.9, 0.1]),
+            constrained_layout=True,
+        )
+        colorbar = na.plt.rgbmesh(
+            np.log10(constrained.inputs / u.K),
+            position,
+            C=constrained.outputs,
+            axis_wavelength="temperature",
+            ax=axs[0],
+            norm=np.sqrt,
+            vmin=0,
+            vmax=np.nanpercentile(
+                constrained.outputs,
+                q=99.5,
+                axis=("detector_x", "detector_y"),
+            ),
+        )
+        na.plt.pcolormesh(
+            C=colorbar,
+            axis_rgb="temperature",
+            ax=axs[1],
+        )
+        axs[0].set_aspect("equal")
+        axs[0].set_xlabel("helioprojective $x$ (arcsec)")
+        axs[0].set_ylabel("helioprojective $y$ (arcsec)")
+        axs[1].set_xticks([])
+        axs[1].set_xlabel("DEM")
+        axs[1].set_ylabel(r"$\log_{10} T$")
+        axs[1].yaxis.tick_right()
+        axs[1].yaxis.set_label_position("right")
+
 The DEM of the pixel with the most plasma above 4 MK, and of the one with the
 most below 1 MK.
 
