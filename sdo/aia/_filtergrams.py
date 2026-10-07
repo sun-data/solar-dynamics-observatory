@@ -26,9 +26,6 @@ class Filtergram(
     A representation of an AIA image sequence using any number of filters.
     """
 
-    timedelta: u.Quantity | na.AbstractScalar = 0 * u.s
-    """The exposure time of each image."""
-
     axis_time: str = "time"
     """The logical axis corresponding to changes in time."""
 
@@ -40,6 +37,14 @@ class Filtergram(
 
     axis_detector_y: str = "detector_y"
     """The logical axis corresponding to changes in detector :math:`y`-coordinate."""
+
+    # Declared after the axes, so that they keep the positions they had
+    # before it, and made anew for each instance, so that changing one in
+    # place leaves the others alone.
+    timedelta: u.Quantity | na.AbstractScalar = dataclasses.field(
+        default_factory=lambda: 0 * u.s,
+    )
+    """The exposure time of each image."""
 
     @classmethod
     def from_time_range(

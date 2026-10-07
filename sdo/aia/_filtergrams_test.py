@@ -45,6 +45,24 @@ class TestSpectrographObservation:
         assert np.all(timedelta.ndarray_aligned(tuple(shape)) > 0 * u.s)
 
 
+def test_timedelta_default() -> None:
+    """
+    Without exposure times, each image sequence has its own zero, so changing
+    one in place leaves the others alone, and the axes keep the positions
+    they had before the exposure time was added.
+    """
+    empty = sdo.aia.Filtergram.empty(
+        shape_base=dict(t=1),
+        shape_wcs=dict(detector_x=2, detector_y=2),
+    )
+    a = sdo.aia.Filtergram(empty.inputs, empty.outputs, "t")
+    assert a.axis_time == "t"
+    assert np.all(a.timedelta == 0 * u.s)
+    a.timedelta += 3 * u.s
+    b = sdo.aia.Filtergram(empty.inputs, empty.outputs)
+    assert np.all(b.timedelta == 0 * u.s)
+
+
 def _fits(path: pathlib.Path, num: int, exptime: float) -> pathlib.Path:
     """A small FITS image with the Sun-centered WCS registration leaves."""
     header = astropy.io.fits.Header()
