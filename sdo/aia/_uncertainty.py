@@ -1,8 +1,10 @@
 from typing import cast
+import functools
 import numpy as np
 import astropy.units as u
 import astropy.table
 import aiapy.calibrate
+import aiapy.calibrate.utils
 import named_arrays as na
 
 __all__ = [
@@ -10,9 +12,20 @@ __all__ = [
 ]
 
 
+@functools.cache
+def _error_table() -> astropy.table.QTable:
+    """
+    The table of the noise of each channel SolarSoft uses, which
+    :func:`aiapy.calibrate.estimate_error` would otherwise read again for
+    every channel, read once.
+    """
+    return aiapy.calibrate.utils.get_error_table()
+
+
 def uncertainty(
     counts: u.Quantity | na.AbstractScalar,
     wavelength: u.Quantity | na.AbstractScalar,
+    n_sample: int = 1,
     include_chianti: bool = False,
     include_eve: bool = False,
     include_preflight: bool = False,
@@ -40,6 +53,10 @@ def uncertainty(
     wavelength
         The channel of each image in `counts`, which may vary along any of
         its axes, as in :attr:`Filtergram.inputs.wavelength`.
+    n_sample
+        The number of measurements, adjacent pixels or consecutive images,
+        each value of `counts` is the average of, which divides the noise
+        by its square root.
     include_chianti
         Whether to add the uncertainty of the atomic data in the temperature
         response, as is often done for DEMs.
@@ -71,26 +88,33 @@ def uncertainty(
 
         (error / images.outputs).median(("detector_x", "detector_y"))
     """
-    counts = na.as_named_array(counts)
+    counts = np.maximum(na.as_named_array(counts), 0 * u.DN)
     wavelength = na.as_named_array(wavelength)
+
+    if error_table is None:
+        error_table = _error_table()
 
     shape = na.shape_broadcasted(counts, wavelength)
     shape_wavelength = na.shape(wavelength)
 
+    counts = na.broadcast_to(counts, shape)
     result = na.ScalarArray.zeros(shape) << u.DN
 
     for index in na.ndindex(shape_wavelength):
         channel = cast(na.ScalarArray, wavelength[index]).ndarray
-        c = cast(na.ScalarArray, na.broadcast_to(counts, shape)[index])
+        c = cast(na.ScalarArray, counts[index])
         value = u.Quantity(c.ndarray).to(u.DN)
         error = aiapy.calibrate.estimate_error(
-            np.maximum(value, 0 * u.DN) / u.pix,
+            value / u.pix,
             channel,
+            n_sample=n_sample,
             include_preflight=include_preflight,
             include_eve=include_eve,
             include_chianti=include_chianti,
             error_table=error_table,
         )
+        # :func:`aiapy.calibrate.estimate_error` gives a single value an axis
+        error = error.reshape(value.shape)
         result[index] = na.ScalarArray(error * u.pix, axes=c.axes)
 
     return result
