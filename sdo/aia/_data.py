@@ -1,8 +1,10 @@
 import joblib
 from typing import Literal
+import functools
 import pathlib
 import astropy.units as u
 import astropy.time
+import astropy.table
 import astropy.io.fits
 import sunpy.net.attrs
 import sunpy.net.jsoc
@@ -166,16 +168,24 @@ def prep(
     )
 
 
+@functools.cache
+def _pointing_table() -> astropy.table.QTable:
+    """
+    The copy of the JSOC pointing table LMSAL keeps for the whole mission,
+    synced daily, so that preparing images does not depend on the JSOC
+    answering a query in time.
+
+    :mod:`aiapy` downloads all 22 MB of it on every call, so it is fetched
+    once per process, and only when an image is prepared.
+    """
+    return aiapy.calibrate.utils.get_pointing_table(source="lmsal")
+
+
 def _prep(
     files: na.AbstractScalarArray,
     register: bool = False,
 ) -> na.ScalarArray:
     result = files.copy()
-
-    # The copy of the JSOC pointing table LMSAL keeps for the whole mission,
-    # synced daily and cached by aiapy, so that preparing images does not
-    # depend on the JSOC answering a query in time.
-    pointing_table = aiapy.calibrate.utils.get_pointing_table(source="lmsal")
 
     for i in files.ndindex():
         file = pathlib.Path(files[i].ndarray)
@@ -192,7 +202,7 @@ def _prep(
 
             aia_map = aiapy.calibrate.update_pointing(
                 smap=aia_map,
-                pointing_table=pointing_table,
+                pointing_table=_pointing_table(),
             )
             if register:
                 aia_map = aiapy.calibrate.register(aia_map)

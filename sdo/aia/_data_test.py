@@ -1,7 +1,11 @@
 import pytest
 import pathlib
+import shutil
 import joblib
+import numpy as np
 import astropy.units as u
+import astropy.table
+import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
 
@@ -116,3 +120,38 @@ def test_prep(
     for i in result.ndindex():
         path = pathlib.Path(result[i].ndarray)
         assert path.is_file()
+
+
+def test_prep_pointing_table(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    The pointing table, which aiapy downloads again on every call, is fetched
+    once for all the images to prepare, and not at all once they are prepared.
+    """
+    original = aiapy.calibrate.utils.get_pointing_table
+    calls = []
+
+    def get_pointing_table(**kwargs) -> astropy.table.QTable:
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(aiapy.calibrate.utils, "get_pointing_table", get_pointing_table)
+    sdo.aia._data._pointing_table.cache_clear()
+
+    file = pathlib.Path(_files.ndarray.item(0))
+    copies = []
+    for name in ["a", "b"]:
+        (tmp_path / name).mkdir()
+        copies.append(shutil.copy(file, tmp_path / name / file.name))
+    files = na.ScalarArray(np.array(copies, dtype=object), axes="time")
+
+    try:
+        sdo.aia._data._prep(files)
+        assert len(calls) == 1
+        sdo.aia._data._pointing_table.cache_clear()
+        sdo.aia._data._prep(files)
+        assert len(calls) == 1
+    finally:
+        sdo.aia._data._pointing_table.cache_clear()
