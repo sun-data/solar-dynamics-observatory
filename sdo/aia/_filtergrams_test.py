@@ -65,15 +65,24 @@ def _fits(path: pathlib.Path, num: int, exptime: float) -> pathlib.Path:
     return path
 
 
-def test_from_fits(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    argnames="num,offset",
+    argvalues=[
+        (6, 1),
+        # one pixel smaller, which leaves a row and a column uncovered
+        (7, 0),
+        (8, 0),
+    ],
+)
+def test_from_fits(tmp_path: pathlib.Path, num: int, offset: int) -> None:
     """
     Images of different sizes, as registration leaves them, are centered in
-    the array of the first, and every vertex has the coordinates the WCS of
-    its file gives it.
+    the array of the first, the pixels they do not cover are NaN, and every
+    vertex has the coordinates the WCS of its file gives it.
     """
     paths = [
         _fits(tmp_path / "a.fits", num=8, exptime=2.9),
-        _fits(tmp_path / "b.fits", num=6, exptime=2.0),
+        _fits(tmp_path / "b.fits", num=num, exptime=2.0),
     ]
     files = na.ScalarArray(np.array([paths], dtype=object), axes=("t", "w"))
     images = sdo.aia.Filtergram.from_fits(
@@ -87,21 +96,46 @@ def test_from_fits(tmp_path: pathlib.Path) -> None:
     timedelta = cast(na.ScalarArray, images.timedelta)
     assert np.all(timedelta.ndarray == [[2.9, 2.0]] * u.s)
 
-    smaller = cast(na.ScalarArray, images.outputs[dict(t=0, w=1)])
-    data = smaller.ndarray_aligned(("detector_y", "detector_x")).value
-    assert np.all(np.isnan(data[0])) and np.all(np.isnan(data[:, -1]))
-    assert np.array_equal(data[1:-1, 1:-1], np.arange(36.0).reshape(6, 6))
+    second = cast(na.ScalarArray, images.outputs[dict(t=0, w=1)])
+    data = second.ndarray_aligned(("detector_y", "detector_x")).value
+    inside = (slice(offset, offset + num), slice(offset, offset + num))
+    assert np.array_equal(
+        data[inside], np.arange(num * num, dtype=float).reshape(num, num)
+    )
+    outside = np.ones(data.shape, dtype=bool)
+    outside[inside] = False
+    assert np.all(np.isnan(data[outside]))
 
-    for i, (path, offset) in enumerate(zip(paths, [0, 1])):
+    for i, (path, shift) in enumerate(zip(paths, [0, offset])):
         wcs = astropy.wcs.WCS(astropy.io.fits.getheader(path))
         # the lower left corner of the first pixel of the file
         x, y = wcs.pixel_to_world_values(-0.5, -0.5)
-        index = dict(t=0, w=i, detector_x=offset, detector_y=offset)
+        index = dict(t=0, w=i, detector_x=shift, detector_y=shift)
         position = images.inputs.position[index]
         found_x = cast(na.ScalarArray, position.x).ndarray
         found_y = cast(na.ScalarArray, position.y).ndarray
         assert np.isclose(found_x, x * u.deg, rtol=0, atol=1e-3 * u.arcsec)
         assert np.isclose(found_y, y * u.deg, rtol=0, atol=1e-3 * u.arcsec)
+
+
+def test_from_fits_closes(tmp_path: pathlib.Path) -> None:
+    """
+    The files are closed once they are read, so they can be deleted, which
+    Windows refuses while a file is open.
+    """
+    paths = [
+        _fits(tmp_path / "a.fits", num=8, exptime=2.9),
+        _fits(tmp_path / "b.fits", num=6, exptime=2.0),
+    ]
+    images = sdo.aia.Filtergram.from_fits(
+        path=na.ScalarArray(np.array([paths], dtype=object), axes=("t", "w")),
+        wavelength=na.ScalarArray([171, 193] * u.AA, axes="w"),
+        axis_time="t",
+        axis_wavelength="w",
+    )
+    for path in paths:
+        path.unlink()
+    assert not np.any(np.isnan(images.outputs[dict(w=0)]))
 
 
 @pytest.mark.parametrize(
