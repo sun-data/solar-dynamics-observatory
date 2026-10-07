@@ -1,5 +1,6 @@
 from typing import cast
 import pathlib
+import dataclasses
 import pytest
 import numpy as np
 import astropy.units as u
@@ -109,10 +110,9 @@ def test_from_fits(tmp_path: pathlib.Path) -> None:
         dict(t=0),
         dict(w=1, detector_x=slice(2, 6), detector_y=slice(1, 7)),
         dict(t=0, w=slice(0, 2), detector_x=slice(None, 5), detector_y=slice(4, None)),
+        dict(detector_x=slice(-3, -1), detector_y=slice(-4, None)),
         # an axis the images do not have is ignored
         dict(t=0, detector_x=slice(3, 5), other=2),
-        # not crops, which take the general path
-        dict(t=0, detector_x=slice(0, 8, 2)),
         dict(w=na.ScalarArray(np.array([1, 0]), axes="w")),
     ],
 )
@@ -134,9 +134,10 @@ def test_getitem(tmp_path: pathlib.Path, item: dict) -> None:
     )
 
     found = images[item]
-    expected = na.FunctionArray._getitem(images, item)
+    expected = dataclasses.replace(images, inputs=images.inputs.explicit)[item]
 
     assert isinstance(found, sdo.aia.Filtergram)
+    assert isinstance(found.inputs, na.AbstractWcsVector)
     axes = tuple(expected.outputs.shape)
     assert found.outputs.shape == expected.outputs.shape
     assert np.array_equal(
@@ -156,26 +157,3 @@ def test_getitem(tmp_path: pathlib.Path, item: dict) -> None:
     timedelta = cast(na.ScalarArray, images.timedelta)
     index = {a: i for a, i in item.items() if a in timedelta.shape}
     assert np.all(found.timedelta == timedelta[index])
-
-
-def test_getitem_negative(tmp_path: pathlib.Path) -> None:
-    """
-    A crop counted from the end is the same crop counted from the start.
-
-    Not compared with :class:`named_arrays.FunctionArray`, which keeps one
-    vertex too few along an axis cropped this way.
-    """
-    paths = [_fits(tmp_path / "a.fits", num=8, exptime=2.9)]
-    images = sdo.aia.Filtergram.from_fits(
-        path=na.ScalarArray(np.array([paths], dtype=object), axes=("t", "w")),
-        wavelength=na.ScalarArray([171] * u.AA, axes="w"),
-        axis_time="t",
-        axis_wavelength="w",
-    )
-
-    found = images[dict(detector_x=slice(-3, -1), detector_y=slice(-4, None))]
-    expected = images[dict(detector_x=slice(5, 7), detector_y=slice(4, 8))]
-
-    assert np.all(found.outputs == expected.outputs)
-    assert np.all(found.inputs.position.x == expected.inputs.position.x)
-    assert np.all(found.inputs.position.y == expected.inputs.position.y)

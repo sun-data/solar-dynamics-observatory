@@ -20,7 +20,7 @@ dependencies = [
     "astropy",
     "sunpy",
     "aiapy",
-    "named-arrays~=2.0",
+    "named-arrays~=2.14",
 ]
 dynamic = ["version"]
 
