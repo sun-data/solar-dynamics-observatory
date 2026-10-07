@@ -38,6 +38,15 @@ def _correction_table() -> astropy.table.QTable:
     return aiapy.calibrate.utils.get_correction_table("SSW")
 
 
+@functools.cache
+def _channel(channel: int) -> aiapy.response.Channel:
+    """
+    The instrument data :mod:`aiapy` has for a channel, which takes almost
+    half a second to read, read once.
+    """
+    return aiapy.response.Channel(channel * u.AA)
+
+
 def temperature_response(
     wavelength: u.Quantity | na.AbstractScalar = [94, 131, 171, 193, 211, 335] * u.AA,
     time: None | str | astropy.time.Time = None,
@@ -75,12 +84,17 @@ def temperature_response(
     eve
         Whether to normalize the response to agree with the irradiance
         measured by SDO/EVE, ``/evenorm`` in ``aia_get_response``. SolarSoft
-        recommends this together with `time`.
+        recommends this together with `time`. Without `time`, the
+        normalization is that of the first epoch of the correction table,
+        where ``aia_get_response`` uses that of the current date. Every epoch
+        of version 10 has the same normalization.
     chiantifix
         Whether to add the empirical correction for emission missing from
         CHIANTI, ``/chiantifix`` in ``aia_get_response``. In this version only
         the 94 angstrom channel has a correction. It was derived for the
-        EVE-normalized response, so it requires `eve`.
+        EVE-normalized response, so it requires `eve`: without it this
+        function raises an error, where ``aia_get_response`` turns on
+        ``/evenorm`` itself.
     axis_wavelength
         The name of the axis along the channels, if `wavelength` does not
         already have one.
@@ -201,15 +215,18 @@ def temperature_response(
 
     responses = []
     for channel in channels:
-        response = table[f"response_{channel}"]
+        response = na.ScalarArray(table[f"response_{channel}"], axes=axis_temperature)
         if eve:
-            # computed at the time `aia_get_response` would compute it at:
-            # the date of the correction, or now if there is none
-            aia = aiapy.response.Channel(channel * u.AA)
-            t = astropy.time.Time.now() if time is None else time
-            response = response * aia.eve_correction(t, correction_table)
+            # Without a time, at the start of the first epoch, since every
+            # epoch has the same normalization. `aia_get_response` uses the
+            # current date, which falls in no epoch once the last one ends.
+            t = time
+            if t is None:
+                t = astropy.time.Time(correction_table["T_START"].min())
+            response = response * _channel(channel).eve_correction(t, correction_table)
         if chiantifix:
-            response = response + table[f"chiantifix_{channel}"]
+            fix = table[f"chiantifix_{channel}"]
+            response = response + na.ScalarArray(fix, axes=axis_temperature)
         if time is not None:
             response = response * aiapy.calibrate.degradation(
                 channel=channel * u.AA,
@@ -219,9 +236,6 @@ def temperature_response(
         responses.append(response)
 
     return na.FunctionArray(
-        inputs=na.ScalarArray(table["temperature"], axes=axis_temperature),
-        outputs=na.ScalarArray(
-            ndarray=u.Quantity(responses).T,
-            axes=(axis_temperature, axis_wavelength),
-        ),
+        inputs=na.ScalarArray(table["temperature"].copy(), axes=axis_temperature),
+        outputs=na.stack(responses, axis=axis_wavelength),
     )

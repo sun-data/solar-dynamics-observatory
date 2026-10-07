@@ -139,7 +139,10 @@ def main(directory: pathlib.Path, check: None | pathlib.Path) -> None:
     fix = read_genx(paths["chiantifix"])
 
     total = emissivity["TOTAL"]
-    logte = np.asarray(total["LOGTE"], dtype=float)
+    # Stored in single precision, so 6.6 reads as 6.5999999, which puts its
+    # temperature just below 10^6.6 K. Rounded back onto the grid of steps of
+    # 0.05 it was made on.
+    logte = np.round(np.asarray(total["LOGTE"], dtype=float), 2)
     emiss_wave = np.asarray(total["WAVE"])
     emiss = np.asarray(total["EMISSIVITY"])
     if emiss.shape != (emiss_wave.size, logte.size):
@@ -229,13 +232,10 @@ def compare(table: astropy.table.QTable, directory: pathlib.Path) -> None:
         ):
             ours = table[f"response_{channel}"].value
             if eve:
+                # the same in every epoch, so at the start of the first
                 aia = aiapy.response.Channel(channel * u.AA)
-                ours = (
-                    ours
-                    * aia.eve_correction(
-                        astropy.time.Time.now(), correction_table
-                    ).value
-                )
+                time = astropy.time.Time(correction_table["T_START"].min())
+                ours = ours * aia.eve_correction(time, correction_table).value
             if fix:
                 ours = ours + table[f"chiantifix_{channel}"].value
             theirs = idl["tr"][j]
