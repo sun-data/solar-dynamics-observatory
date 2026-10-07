@@ -19,7 +19,7 @@ dependencies = [
     "joblib",
     "astropy",
     "sunpy",
-    "aiapy",
+    "aiapy>=0.11",
     "named-arrays~=2.14",
 ]
 dynamic = ["version"]
