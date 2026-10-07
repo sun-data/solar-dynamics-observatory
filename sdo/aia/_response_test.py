@@ -153,6 +153,7 @@ def test_temperature_response_eve_now(monkeypatch: pytest.MonkeyPatch) -> None:
         return cls("2031-01-01")
 
     monkeypatch.setattr(astropy.time.Time, "now", classmethod(now))
+    assert astropy.time.Time.now() > _correction_table["T_STOP"].max()
     found = sdo.aia.temperature_response(171 * u.AA, eve=True)
     assert np.all(_values(found.outputs) == _values(expected.outputs))
 
