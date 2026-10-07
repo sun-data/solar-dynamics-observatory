@@ -1,8 +1,9 @@
-from typing import cast
+from typing import Any, cast
 import pytest
 import numpy as np
 import astropy.units as u
 import astropy.time
+import astropy.table
 import aiapy.calibrate
 import aiapy.calibrate.utils
 import aiapy.response
@@ -107,6 +108,53 @@ def test_temperature_response_corrections() -> None:
 def test_temperature_response_invalid(kwargs: dict) -> None:
     with pytest.raises(ValueError):
         sdo.aia.temperature_response(**kwargs)
+
+
+@pytest.mark.parametrize(
+    argnames="time",
+    argvalues=[
+        ["2024-05-10", "2024-05-11"],
+        # as many as the temperatures, which would multiply them one by one
+        astropy.time.Time("2024-05-10") + np.arange(101) * u.day,
+    ],
+)
+def test_temperature_response_times(time: list[str] | astropy.time.Time) -> None:
+    with pytest.raises(ValueError, match="single time"):
+        sdo.aia.temperature_response(171 * u.AA, time=time)
+
+
+@pytest.mark.parametrize(
+    argnames="kwargs",
+    argvalues=[
+        # each alone, since together the area of the first epoch, which a
+        # table of every version can take from another version, cancels
+        dict(eve=True),
+        dict(time="2024-05-10T18:00"),
+    ],
+)
+def test_temperature_response_version(kwargs: dict[str, Any]) -> None:
+    """
+    Only the rows of version 10 of a correction table are used, so that a
+    table of every version, like the one from the JSOC, gives what the table
+    of version 10 does, and a table without version 10 is an error.
+    """
+    other = _correction_table.copy()
+    other["VER_NUM"] = 9
+    other["EFF_AREA"] = 2 * other["EFF_AREA"]
+    # older, so that it comes first when the rows are sorted by date
+    other["DATE"] = "2012-01-01T00:00:00.000"
+    both = astropy.table.vstack([other, _correction_table])
+
+    kwargs = dict(wavelength=[94, 171] * u.AA, **kwargs)
+    expected = sdo.aia.temperature_response(
+        correction_table=_correction_table,
+        **kwargs,
+    )
+    found = sdo.aia.temperature_response(correction_table=both, **kwargs)
+    assert np.all(_values(found.outputs) == _values(expected.outputs))
+
+    with pytest.raises(ValueError, match="version 10"):
+        sdo.aia.temperature_response(correction_table=other, **kwargs)
 
 
 def test_temperature_response_default_table() -> None:
