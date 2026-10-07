@@ -4,6 +4,7 @@ import shutil
 import joblib
 import numpy as np
 import astropy.units as u
+import astropy.time
 import astropy.table
 import aiapy.calibrate.utils
 import named_arrays as na
@@ -122,20 +123,26 @@ def test_prep(
         assert path.is_file()
 
 
+@pytest.fixture(scope="module")
+def pointing_table() -> astropy.table.QTable:
+    """The pointing table of LMSAL, downloaded once for the tests here."""
+    return aiapy.calibrate.utils.get_pointing_table(source="lmsal")
+
+
 def test_prep_pointing_table(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    pointing_table: astropy.table.QTable,
 ) -> None:
     """
     The pointing table, which aiapy downloads again on every call, is fetched
     once for all the images to prepare, and not at all once they are prepared.
     """
-    original = aiapy.calibrate.utils.get_pointing_table
     calls = []
 
     def get_pointing_table(**kwargs) -> astropy.table.QTable:
         calls.append(kwargs)
-        return original(**kwargs)
+        return pointing_table
 
     monkeypatch.setattr(aiapy.calibrate.utils, "get_pointing_table", get_pointing_table)
     sdo.aia._data._pointing_table.cache_clear()
@@ -153,5 +160,37 @@ def test_prep_pointing_table(
         sdo.aia._data._pointing_table.cache_clear()
         sdo.aia._data._prep(files)
         assert len(calls) == 1
+    finally:
+        sdo.aia._data._pointing_table.cache_clear()
+
+
+def test_prep_pointing_table_stale(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pointing_table: astropy.table.QTable,
+) -> None:
+    """
+    A pointing table fetched earlier in the process which ends before an
+    image is fetched again, since LMSAL adds to it every day.
+    """
+    end = astropy.time.Time(_time_start) - 1 * u.day
+    tables = [pointing_table[pointing_table["T_STOP"] < end], pointing_table]
+    calls = []
+
+    def get_pointing_table(**kwargs) -> astropy.table.QTable:
+        calls.append(kwargs)
+        return tables[len(calls) - 1]
+
+    monkeypatch.setattr(aiapy.calibrate.utils, "get_pointing_table", get_pointing_table)
+    sdo.aia._data._pointing_table.cache_clear()
+
+    file = pathlib.Path(_files.ndarray.item(0))
+    copy = shutil.copy(file, tmp_path / file.name)
+    files = na.ScalarArray(np.array([copy], dtype=object), axes="time")
+
+    try:
+        result = sdo.aia._data._prep(files)
+        assert len(calls) == 2
+        assert pathlib.Path(result.ndarray.item(0)).is_file()
     finally:
         sdo.aia._data._pointing_table.cache_clear()

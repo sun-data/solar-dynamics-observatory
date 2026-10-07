@@ -5,7 +5,6 @@ import pathlib
 import astropy.units as u
 import astropy.time
 import astropy.table
-import astropy.io.fits
 import sunpy.net.attrs
 import sunpy.net.jsoc
 import aiapy.calibrate.utils
@@ -176,7 +175,8 @@ def _pointing_table() -> astropy.table.QTable:
     answering a query in time.
 
     :mod:`aiapy` downloads all 22 MB of it on every call, so it is fetched
-    once per process, and only when an image is prepared.
+    once per process, and only when an image is prepared, and again only if
+    an image is newer than its last entry.
     """
     return aiapy.calibrate.utils.get_pointing_table(source="lmsal")
 
@@ -199,6 +199,11 @@ def _prep(
         if not file_15.is_file():
 
             aia_map = sunpy.map.Map(file)
+
+            if aia_map.reference_date >= _pointing_table()["T_STOP"].max():
+                # Fetched earlier in this process, so perhaps before the
+                # daily sync which added this image.
+                _pointing_table.cache_clear()
 
             aia_map = aiapy.calibrate.update_pointing(
                 smap=aia_map,
