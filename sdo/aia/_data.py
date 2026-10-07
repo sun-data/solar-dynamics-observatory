@@ -1,9 +1,10 @@
 import joblib
 from typing import Literal
+import functools
 import pathlib
 import astropy.units as u
 import astropy.time
-import astropy.io.fits
+import astropy.table
 import sunpy.net.attrs
 import sunpy.net.jsoc
 import aiapy.calibrate.utils
@@ -166,29 +167,25 @@ def prep(
     )
 
 
+@functools.cache
+def _pointing_table() -> astropy.table.QTable:
+    """
+    The copy of the JSOC pointing table LMSAL keeps for the whole mission,
+    synced daily, so that preparing images does not depend on the JSOC
+    answering a query in time.
+
+    :mod:`aiapy` downloads all 22 MB of it on every call, so it is fetched
+    once per process, and only when an image is prepared, and again only if
+    an image is newer than its last entry.
+    """
+    return aiapy.calibrate.utils.get_pointing_table(source="lmsal")
+
+
 def _prep(
     files: na.AbstractScalarArray,
     register: bool = False,
 ) -> na.ScalarArray:
     result = files.copy()
-
-    # Determine the time range spanned by all files so the pointing table only
-    # needs to be fetched from JSOC once instead of once per file.
-    times = []
-    for i in files.ndindex():
-        file = files[i].ndarray
-        with astropy.io.fits.open(file) as hdul:
-            for hdu in hdul:
-                if "DATE-OBS" in hdu.header:
-                    times.append(astropy.time.Time(hdu.header["DATE-OBS"]))
-                    break
-    time_min = min(times)
-    time_max = max(times)
-
-    pointing_table = aiapy.calibrate.utils.get_pointing_table(
-        source="JSOC",
-        time_range=(time_min - 12 * u.h, time_max + 12 * u.h),
-    )
 
     for i in files.ndindex():
         file = pathlib.Path(files[i].ndarray)
@@ -203,9 +200,14 @@ def _prep(
 
             aia_map = sunpy.map.Map(file)
 
+            if aia_map.reference_date >= _pointing_table()["T_STOP"].max():
+                # Fetched earlier in this process, so perhaps before the
+                # daily sync which added this image.
+                _pointing_table.cache_clear()
+
             aia_map = aiapy.calibrate.update_pointing(
                 smap=aia_map,
-                pointing_table=pointing_table,
+                pointing_table=_pointing_table(),
             )
             if register:
                 aia_map = aiapy.calibrate.register(aia_map)

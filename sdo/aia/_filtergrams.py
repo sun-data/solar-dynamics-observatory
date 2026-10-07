@@ -2,6 +2,7 @@ import joblib
 from typing import Self, Literal
 import pathlib
 import dataclasses
+import numpy as np
 import astropy.units as u
 import astropy.time
 import astropy.wcs
@@ -36,6 +37,14 @@ class Filtergram(
 
     axis_detector_y: str = "detector_y"
     """The logical axis corresponding to changes in detector :math:`y`-coordinate."""
+
+    # Declared after the axes, so that they keep the positions they had
+    # before it, and made anew for each instance, so that changing one in
+    # place leaves the others alone.
+    timedelta: u.Quantity | na.AbstractScalar = dataclasses.field(
+        default_factory=lambda: 0 * u.s,
+    )
+    """The exposure time of each image."""
 
     @classmethod
     def from_time_range(
@@ -130,15 +139,15 @@ class Filtergram(
         axis_detector_y: str = "detector_y",
     ) -> Self:
         """
-        Given a single FITS file or an array of FITS files with the same OBSID,
-        construct a SpectrographObservation object.
+        Given a single FITS file or an array of FITS files,
+        construct a :class:`Filtergram` object.
 
         Parameters
         ----------
         path
             A single FITS file or an array of FITS files to load.
-        window
-            The spectral window to load.
+        wavelength
+            The channel of each image.
         axis_time
             The logical axis corresponding to changes in time.
         axis_wavelength
@@ -152,12 +161,11 @@ class Filtergram(
         path = na.asarray(path)
         shape_base = path.shape
 
-        hdul_prototype = astropy.io.fits.open(path.ndarray.item(0))
-
         index_window = 0
 
-        hdu_prototype = hdul_prototype[index_window]
-        wcs_prototype = astropy.wcs.WCS(hdu_prototype)
+        with astropy.io.fits.open(path.ndarray.item(0)) as hdul_prototype:
+            hdu_prototype = hdul_prototype[index_window]
+            wcs_prototype = astropy.wcs.WCS(hdu_prototype)
 
         axes_wcs = list(reversed(wcs_prototype.axis_type_names))
 
@@ -169,11 +177,6 @@ class Filtergram(
 
         shape_wcs = wcs_prototype.array_shape
         shape_wcs = {ax: sz for ax, sz in zip(axes_wcs, shape_wcs)}
-
-        index_max = {
-            axis_detector_x: slice(None, shape_wcs[axis_detector_x]),
-            axis_detector_y: slice(None, shape_wcs[axis_detector_y]),
-        }
 
         self = cls.empty(
             shape_base=shape_base,
@@ -187,29 +190,62 @@ class Filtergram(
         for index in path.ndindex():
             file = path[index].ndarray
 
-            hdul = astropy.io.fits.open(
+            # Read whole rather than mapped into memory, since a mapped file
+            # stays open as long as its data does.
+            with astropy.io.fits.open(
                 name=file,
                 output_verify="silentfix",
-            )
-            hdu = hdul[index_window]
+                memmap=False,
+            ) as hdul:
+                hdu = hdul[index_window]
+                header = hdu.header
+                wcs = astropy.wcs.WCS(hdu).wcs
 
-            self.outputs[index] = na.ScalarArray(
-                ndarray=hdu.data << u.DN,
-                axes=tuple(shape_wcs),
-            )[index_max]
+                data = na.ScalarArray(
+                    ndarray=hdu.data << u.DN,
+                    axes=tuple(shape_wcs),
+                )
 
-            time = astropy.time.Time(hdu.header["DATE-OBS"]).jd
+            # Registration with aiapy leaves a channel 4094 pixels across
+            # instead of 4096 when its plate scale is finer than 0.6 arcseconds
+            # (LM-SAL/aiapy#384), with the center of the Sun at the center of
+            # the image either way. So each image is centered in the array of
+            # the first, and its reference pixel is moved with it. That keeps
+            # its coordinates and puts every registered channel on the same
+            # grid. A size which differed by an odd number of pixels, which
+            # registration does not leave, would put an image half a pixel off
+            # that grid, though still at its own coordinates.
+            offset = {a: (shape_wcs[a] - data.shape[a]) // 2 for a in shape_wcs}
+            index_out: dict[str, int | slice] = dict(index)
+            index_in: dict[str, slice] = dict()
+            for a in shape_wcs:
+                num = min(shape_wcs[a], data.shape[a])
+                index_out[a] = slice(max(offset[a], 0), max(offset[a], 0) + num)
+                index_in[a] = slice(max(-offset[a], 0), max(-offset[a], 0) + num)
+            if data.shape != shape_wcs:
+                self.outputs[index] = np.nan * u.DN
+            self.outputs[index_out] = data[index_in]
+
+            time = astropy.time.Time(header["DATE-OBS"]).jd
             self.inputs.time[index] = time
 
-            wcs = astropy.wcs.WCS(hdu).wcs
+            self.timedelta[index] = header["EXPTIME"] * u.s
 
             crval = self.inputs.crval
             crval.position.x[index] = wcs.crval[~ix] << u.deg
             crval.position.y[index] = wcs.crval[~iy] << u.deg
 
+            # One less than the FITS keyword, which counts pixels from one
+            # where :class:`named_arrays.AbstractWcsVector` counts them from
+            # zero, as in :mod:`sdo.hmi`. Without this every image sits one
+            # pixel, 0.6 arcseconds, from where it belongs.
             crpix = self.inputs.crpix
-            crpix.components[axis_detector_x][index] = wcs.crpix[~ix]
-            crpix.components[axis_detector_y][index] = wcs.crpix[~iy]
+            crpix.components[axis_detector_x][index] = (
+                wcs.crpix[~ix] - 1 + offset[axis_detector_x]
+            )
+            crpix.components[axis_detector_y][index] = (
+                wcs.crpix[~iy] - 1 + offset[axis_detector_y]
+            )
 
             cdelt = self.inputs.cdelt
             cdelt.position.x[index] = wcs.cdelt[~ix] << u.deg
@@ -309,7 +345,7 @@ class Filtergram(
         return cls(
             inputs=inputs,
             outputs=outputs,
-            # timedelta=timedelta,
+            timedelta=na.ScalarArray.zeros(shape_base) << u.s,
             axis_time=axis_time,
             axis_wavelength=axis_wavelength,
             axis_detector_x=axis_detector_x,
