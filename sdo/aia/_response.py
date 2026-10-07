@@ -142,6 +142,7 @@ def temperature_response(
 
     .. jupyter-execute::
 
+        import numpy as np
         import matplotlib.pyplot as plt
         import astropy.units as u
         import astropy.visualization
@@ -157,7 +158,15 @@ def temperature_response(
             eve=True,
         )
 
-        colors = [f"C{i}" for i in range(len(channels))]
+        # a color and a label for each channel, along the axis of channels
+        colors = na.ScalarArray(
+            ndarray=np.array([f"C{i}" for i in range(len(channels))]),
+            axes="wavelength",
+        )
+        labels = na.ScalarArray(
+            ndarray=np.array([f"{c} Å" for c in channels]),
+            axes="wavelength",
+        )
 
         with astropy.visualization.quantity_support():
             fig, ax = plt.subplots(constrained_layout=True)
@@ -167,7 +176,7 @@ def temperature_response(
                 ax=ax,
                 axis="temperature",
                 color=colors,
-                label=[f"{c} Å" for c in channels],
+                label=labels,
             )
             na.plt.plot(
                 response_2024.inputs,

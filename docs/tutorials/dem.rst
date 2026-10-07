@@ -57,7 +57,8 @@ half of the disk.
         detector_y=slice(1325, 1925),
     )]
 
-    # the corners of the pixels, which every channel shares
+    # the corners of the pixels, which registration makes the same in
+    # every channel
     position = region.inputs.position[dict(wavelength=0)]
 
     with astropy.visualization.quantity_support():
@@ -143,7 +144,10 @@ constrain, :math:`\log_{10} T` from 5.5 to 7.5.
             response.outputs,
             ax=ax,
             axis="temperature",
-            label=[f"{c:.0f} Å" for c in channels.ndarray.value],
+            label=na.ScalarArray(
+                ndarray=np.array([f"{c:.0f} Å" for c in channels.ndarray.value]),
+                axes="wavelength",
+            ),
         )
         ax.set_xscale("log")
         ax.set_yscale("log")
@@ -171,7 +175,7 @@ region, on every core.
     )
 
     # the median reduced chi squared, which the inversion aims at one
-    np.median(chi2.ndarray)
+    chi2.median()
 
 The emission measure in four ranges of temperature, the integral of the DEM
 over each.
