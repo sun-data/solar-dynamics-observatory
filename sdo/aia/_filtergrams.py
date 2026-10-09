@@ -309,10 +309,10 @@ class Filtergram(
                 ),
             ),
             crpix=na.CartesianNdVectorArray(
-                components=dict(
-                    detector_x=na.ScalarArray.empty(shape_base),
-                    detector_y=na.ScalarArray.empty(shape_base),
-                )
+                components={
+                    axis_detector_x: na.ScalarArray.empty(shape_base),
+                    axis_detector_y: na.ScalarArray.empty(shape_base),
+                }
             ),
             cdelt=na.PositionalVectorArray(
                 position=na.Cartesian2dVectorArray(
@@ -323,16 +323,16 @@ class Filtergram(
             pc=na.PositionalMatrixArray(
                 position=na.Cartesian2dMatrixArray(
                     x=na.CartesianNdVectorArray(
-                        components=dict(
-                            detector_x=na.ScalarArray.empty(shape_base),
-                            detector_y=na.ScalarArray.empty(shape_base),
-                        ),
+                        components={
+                            axis_detector_x: na.ScalarArray.empty(shape_base),
+                            axis_detector_y: na.ScalarArray.empty(shape_base),
+                        },
                     ),
                     y=na.CartesianNdVectorArray(
-                        components=dict(
-                            detector_x=na.ScalarArray.empty(shape_base),
-                            detector_y=na.ScalarArray.empty(shape_base),
-                        ),
+                        components={
+                            axis_detector_x: na.ScalarArray.empty(shape_base),
+                            axis_detector_y: na.ScalarArray.empty(shape_base),
+                        },
                     ),
                 ),
             ),

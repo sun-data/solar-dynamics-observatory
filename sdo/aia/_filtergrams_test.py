@@ -92,11 +92,25 @@ def _fits(path: pathlib.Path, num: int, exptime: float) -> pathlib.Path:
         (8, 0),
     ],
 )
-def test_from_fits(tmp_path: pathlib.Path, num: int, offset: int) -> None:
+@pytest.mark.parametrize(
+    argnames="axis_x,axis_y",
+    argvalues=[
+        ("detector_x", "detector_y"),
+        ("x", "y"),
+    ],
+)
+def test_from_fits(
+    tmp_path: pathlib.Path,
+    num: int,
+    offset: int,
+    axis_x: str,
+    axis_y: str,
+) -> None:
     """
     Images of different sizes, as registration leaves them, are centered in
     the array of the first, the pixels they do not cover are NaN, and every
-    vertex has the coordinates the WCS of its file gives it.
+    vertex has the coordinates the WCS of its file gives it, whatever the
+    detector axes are called.
     """
     paths = [
         _fits(tmp_path / "a.fits", num=8, exptime=2.9),
@@ -108,14 +122,18 @@ def test_from_fits(tmp_path: pathlib.Path, num: int, offset: int) -> None:
         wavelength=na.ScalarArray([171, 193] * u.AA, axes="w"),
         axis_time="t",
         axis_wavelength="w",
+        axis_detector_x=axis_x,
+        axis_detector_y=axis_y,
     )
 
-    assert images.outputs.shape == dict(t=1, w=2, detector_y=8, detector_x=8)
+    assert images.axis_detector_x == axis_x
+    assert images.axis_detector_y == axis_y
+    assert images.outputs.shape == {"t": 1, "w": 2, axis_y: 8, axis_x: 8}
     timedelta = cast(na.ScalarArray, images.timedelta)
     assert np.all(timedelta.ndarray == [[2.9, 2.0]] * u.s)
 
     second = cast(na.ScalarArray, images.outputs[dict(t=0, w=1)])
-    data = second.ndarray_aligned(("detector_y", "detector_x")).value
+    data = second.ndarray_aligned((axis_y, axis_x)).value
     inside = (slice(offset, offset + num), slice(offset, offset + num))
     assert np.array_equal(
         data[inside], np.arange(num * num, dtype=float).reshape(num, num)
@@ -128,7 +146,7 @@ def test_from_fits(tmp_path: pathlib.Path, num: int, offset: int) -> None:
         wcs = astropy.wcs.WCS(astropy.io.fits.getheader(path))
         # the lower left corner of the first pixel of the file
         x, y = wcs.pixel_to_world_values(-0.5, -0.5)
-        index = dict(t=0, w=i, detector_x=shift, detector_y=shift)
+        index = {"t": 0, "w": i, axis_x: shift, axis_y: shift}
         position = images.inputs.position[index]
         found_x = cast(na.ScalarArray, position.x).ndarray
         found_y = cast(na.ScalarArray, position.y).ndarray
