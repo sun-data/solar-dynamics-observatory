@@ -14,6 +14,8 @@ _correction_table = aiapy.calibrate.utils.get_correction_table("SSW")
 
 _unit = u.DN * u.cm**5 / u.s / u.pix
 
+_emissivities = ["SolarSoft", "CHIANTI 11"]
+
 
 def _values(a: na.AbstractArray) -> np.ndarray:
     """The values of a scalar array, with its axes in the order they are in."""
@@ -21,6 +23,7 @@ def _values(a: na.AbstractArray) -> np.ndarray:
     return a.ndarray_aligned(tuple(a.shape))
 
 
+@pytest.mark.parametrize("emissivity", _emissivities)
 @pytest.mark.parametrize(
     argnames="wavelength,shape",
     argvalues=[
@@ -36,14 +39,16 @@ def _values(a: na.AbstractArray) -> np.ndarray:
 def test_temperature_response(
     wavelength: u.Quantity | na.ScalarArray,
     shape: dict[str, int],
+    emissivity: Any,
 ) -> None:
-    result = sdo.aia.temperature_response(wavelength)
+    result = sdo.aia.temperature_response(wavelength, emissivity=emissivity)
     assert result.outputs.shape == shape
     assert result.inputs.shape == dict(temperature=101)
     assert na.unit(result.outputs) == _unit
     assert np.all(_values(result.outputs) >= 0)
 
 
+@pytest.mark.parametrize("emissivity", _emissivities)
 @pytest.mark.parametrize(
     argnames="channel,logte",
     argvalues=[
@@ -56,8 +61,12 @@ def test_temperature_response(
         (94, 6.8),
     ],
 )
-def test_temperature_response_peak(channel: int, logte: float) -> None:
-    result = sdo.aia.temperature_response(channel * u.AA)
+def test_temperature_response_peak(
+    channel: int,
+    logte: float,
+    emissivity: Any,
+) -> None:
+    result = sdo.aia.temperature_response(channel * u.AA, emissivity=emissivity)
     temperature = result.inputs.ndarray
     response = _values(result.outputs[dict(wavelength=0)])
     # the hot peaks of 94 and 335, not their cool ones
@@ -97,12 +106,65 @@ def test_temperature_response_corrections() -> None:
         assert changed == (channel == 94 * u.AA)
 
 
+def test_temperature_response_corrections_chianti() -> None:
+    """
+    The corrections are to the effective area, so they scale the response
+    from CHIANTI 11 by what they scale the response of SolarSoft by.
+    """
+    channels = [94, 131, 171, 193, 211, 304, 335] * u.AA
+    time = astropy.time.Time("2024-05-10T18:00")
+    kwargs = dict(wavelength=channels, correction_table=_correction_table)
+
+    ssw = sdo.aia.temperature_response(**kwargs).outputs
+    ssw_eve = sdo.aia.temperature_response(eve=True, time=time, **kwargs).outputs
+    new = sdo.aia.temperature_response(emissivity="CHIANTI 11", **kwargs).outputs
+    new_eve = sdo.aia.temperature_response(
+        eve=True, time=time, emissivity="CHIANTI 11", **kwargs
+    ).outputs
+
+    assert not np.allclose(_values(new), _values(ssw), rtol=1e-2, atol=0)
+    for i, _ in enumerate(channels):
+        index = dict(wavelength=i)
+        scale = _values(ssw_eve[index])[50] / _values(ssw[index])[50]
+        expected = _values(new[index]) * scale
+        assert np.allclose(_values(new_eve[index]), expected, rtol=1e-12, atol=0)
+
+
+@pytest.mark.parametrize("channel", [94, 131, 171, 193, 211, 304, 335])
+def test_temperature_response_chianti_solarsoft(channel: int) -> None:
+    """
+    The response from CHIANTI 11 agrees with that of SolarSoft where the
+    atomic data has changed little: within 10% at the peak of each channel,
+    which the boost of He II dominates in 304 angstroms, and within 2% at
+    log T 8, where the free-free continuum dominates.
+    """
+    ssw = sdo.aia.temperature_response(channel * u.AA)
+    new = sdo.aia.temperature_response(channel * u.AA, emissivity="CHIANTI 11")
+    logt = np.log10(_values(ssw.inputs).to_value(u.K))
+    ssw = _values(ssw.outputs[dict(wavelength=0)]).value
+    new = _values(new.outputs[dict(wavelength=0)]).value
+
+    assert 0.9 < new.max() / ssw.max() < 1.1
+    hot = np.argmin(np.abs(logt - 8))
+    assert 0.98 < new[hot] / ssw[hot] < 1.02
+
+
+def test_temperature_response_positional() -> None:
+    """The arguments of version 1.2.0 keep their positions."""
+    result = sdo.aia.temperature_response(
+        [171] * u.AA, None, False, False, "channel", "logte"
+    )
+    assert result.outputs.shape == dict(logte=101, channel=1)
+
+
 @pytest.mark.parametrize(
     argnames="kwargs",
     argvalues=[
         dict(wavelength=1600 * u.AA),
         dict(wavelength=na.ScalarArray([[171]] * u.AA, axes=("a", "b"))),
         dict(chiantifix=True),
+        dict(chiantifix=True, eve=True, emissivity="CHIANTI 11"),
+        dict(emissivity="CHIANTI 10"),
     ],
 )
 def test_temperature_response_invalid(kwargs: dict) -> None:
@@ -206,13 +268,14 @@ def test_temperature_response_eve_now(monkeypatch: pytest.MonkeyPatch) -> None:
     assert np.all(_values(found.outputs) == _values(expected.outputs))
 
 
-def test_temperature_response_grid() -> None:
+@pytest.mark.parametrize("emissivity", _emissivities)
+def test_temperature_response_grid(emissivity: Any) -> None:
     """
     The temperatures are exactly :math:`10^{4 + 0.05 i}` kelvin, so that their
     logarithms fall on the edges of ranges like 6.3 to 6.6, rather than just
     below them as the single-precision grid of SolarSoft does.
     """
-    result = sdo.aia.temperature_response(171 * u.AA)
+    result = sdo.aia.temperature_response(171 * u.AA, emissivity=emissivity)
     logt = np.log10(_values(result.inputs).to_value(u.K))
     assert np.all(logt == np.round(np.linspace(4, 9, 101), 2))
 
