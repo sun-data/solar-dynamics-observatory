@@ -64,10 +64,10 @@ def temperature_response(
     time: None | str | astropy.time.Time = None,
     eve: bool = False,
     chiantifix: bool = False,
-    emissivity: Literal["SolarSoft", "CHIANTI 11"] = "SolarSoft",
     axis_wavelength: str = "wavelength",
     axis_temperature: str = "temperature",
     correction_table: None | astropy.table.QTable = None,
+    emissivity: Literal["SolarSoft", "CHIANTI 11"] = "SolarSoft",
 ) -> na.FunctionArray[na.ScalarArray, na.ScalarArray]:
     r"""
     The temperature response of the AIA EUV channels, as SolarSoft computes it,
@@ -116,13 +116,6 @@ def temperature_response(
         function raises an error, where ``aia_get_response`` turns on
         ``/evenorm`` itself. It corrects the emissivity of SolarSoft, so it
         is an error with any other `emissivity`.
-    emissivity
-        The emission of the plasma the response is computed from.
-        ``"SolarSoft"`` (the default) is the CHIANTI 9 emissivity of version
-        10 of SolarSoft. ``"CHIANTI 11"`` is computed from version 11 of
-        CHIANTI with the same abundances, ionization equilibrium, pressure,
-        and empirical boost of the He II 304 angstrom line. The effective
-        areas, and so `time` and `eve`, are the same for both.
     axis_wavelength
         The name of the axis along the channels, if `wavelength` does not
         already have one.
@@ -136,6 +129,14 @@ def temperature_response(
         that is the version of the response, so a table of every version,
         like the one :mod:`aiapy` fetches from the JSOC, gives the same
         result, and a table without version 10 is an error.
+    emissivity
+        The emission of the plasma the response is computed from.
+        ``"SolarSoft"`` (the default) is the CHIANTI 9 emissivity of version
+        10 of SolarSoft. ``"CHIANTI 11"`` is computed from version 11 of
+        CHIANTI, its lines and continua and its ionization equilibrium, with
+        the abundances, pressure, and empirical boost of the He II 304
+        angstrom line of SolarSoft. The effective areas, and so `time` and
+        `eve`, are the same for both.
 
     Returns
     -------
@@ -160,6 +161,15 @@ def temperature_response(
     SolarSoft first bins the lines into steps of 0.1 angstroms, dropping in the
     process the lines which fall exactly halfway between two steps, like the
     O V line at 192.750 angstroms.
+
+    The largest difference between the two is in the 94 angstrom channel,
+    whose response from CHIANTI 11 is a quarter of that of SolarSoft at
+    log T 6.35. Most of the response of SolarSoft there is the
+    :math:`3s^2\,3d\,^2D_{3/2} - 3s^2\,4p\,^2P_{1/2}` line of Fe XIV, which
+    CHIANTI 9 put at 93.61 angstroms and CHIANTI 11 moved out of the channel
+    to 91.27 angstroms, following :cite:t:`Lepson2023`. The empirical
+    correction of `chiantifix` adds emission at these temperatures to the
+    response of SolarSoft, and there is no such correction for CHIANTI 11.
 
     The corrections are scalars per channel, so they are applied here as
     ``aia_get_response`` applies them:

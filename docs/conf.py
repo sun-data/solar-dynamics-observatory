@@ -101,4 +101,5 @@ intersphinx_mapping = {
     'aiapy': ('https://aiapy.readthedocs.io/en/stable/', None),
     'named_arrays': ('https://named-arrays.readthedocs.io/en/stable/', None),
     'utu': ('https://utu.readthedocs.io/en/latest/', None),
+    'fiasco': ('https://fiasco.readthedocs.io/en/stable/', None),
 }

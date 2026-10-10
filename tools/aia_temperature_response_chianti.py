@@ -10,8 +10,8 @@ that the two tables differ by the version of CHIANTI alone:
 - the same effective areas, from ``aia_V9_all_fullinst.genx``, with the same
   crosstalk and conversion to DN;
 - the same plasma, as ``aia_V9_fullemiss.genx`` records it: the coronal
-  abundances of Feldman (1992), the CHIANTI ionization equilibrium, a constant
-  pressure of 1e15 K cm^-3, and proton rates;
+  abundances of Feldman (1992), a constant pressure of 1e15 K cm^-3, and
+  proton rates, with the ionization equilibrium of the version of CHIANTI;
 - the same temperatures, log T from 4 to 9 in steps of 0.05;
 - the same emission: every bound-bound line of every element at least as
   abundant as zinc, and the free-free, free-bound and two-photon continua;
@@ -23,9 +23,13 @@ There is nothing like ``/chiantifix``, which corrects for lines missing from
 the version of CHIANTI behind version 10, and so is not part of this table.
 
 Each ion is computed in a process of its own, and its contribution to every
-channel is saved in ``DIRECTORY/chianti_VERSION`` as soon as it is done, so an
-interrupted run resumes where it stopped. The whole database takes several
-hours of CPU time, almost all of it solving for level populations.
+channel is saved in ``DIRECTORY/chianti_VERSION_DIGEST`` as soon as it is
+done, so an interrupted run resumes where it stopped. ``DIGEST`` changes with
+this script, the one it imports, the file of effective areas, and the
+versions of :mod:`fiasco` and :mod:`utu`, so a run after any of them changes
+starts over instead of reusing what they computed before. The whole database
+takes several hours of CPU time, almost all of it solving for level
+populations.
 
 Besides this package, it needs :mod:`fiasco` and :mod:`utu`, and the HDF5
 database of CHIANTI which :mod:`fiasco` builds. The database is the one
@@ -53,8 +57,10 @@ Usage::
 import argparse
 import concurrent.futures
 import datetime
+import hashlib
 import os
 import pathlib
+import sys
 import time
 import warnings
 from typing import Any, cast
@@ -90,12 +96,20 @@ it.
 ionization_fraction = "chianti"
 """The ionization equilibrium, by its name in :mod:`fiasco`."""
 
-boost = {("He 2", 1, 3): 20}
+boost = {("He 2", "1s 2S1/2", "2p 2P1/2"): 20}
 """
-The factor each line is multiplied by, keyed by the ion and the lower and
-upper levels of the line. ``aia_bp_make_emiss`` boosts the
-:math:`1s\\,^2S_{1/2} - 2p\\,^2P_{1/2}` line of He II at 303.786 angstroms, one
-of the two lines of the doublet, by a factor of 20.
+The factor each line is multiplied by, keyed by the ion and the labels
+:mod:`fiasco` gives the lower and upper levels of the line, made from the
+energy levels of CHIANTI rather than the labels of its lines, which are
+wrong for these levels of He II in version 11. ``aia_bp_make_emiss`` boosts
+the :math:`1s\\,^2S_{1/2} - 2p\\,^2P_{1/2}` line of He II at 303.786
+angstroms, one of the two lines of the doublet, by a factor of 20.
+"""
+
+workers_max_windows = 61
+"""
+The most processes :class:`concurrent.futures.ProcessPoolExecutor` can have
+on Windows.
 """
 
 components = ("lines", "free_free", "free_bound", "two_photon")
@@ -131,6 +145,13 @@ def _initialize(
         area=area,
         database=database,
     )
+
+    # The continua vary slowly, so they are summed over the wavelengths the
+    # effective area is tabulated at, as ``aia_bp_make_tresp`` sums the
+    # emissivity, with these weights.
+    step = (wavelength[-1] - wavelength[0]) / (wavelength.size - 1)
+    weight = _area(wavelength) * (wavelength / _hc * step)[:, np.newaxis]
+    _state.update(weight=weight)
 
 
 def _area(wavelength: np.ndarray) -> np.ndarray:
@@ -173,8 +194,8 @@ def _lines(ion: fiasco.Ion, density: u.Quantity) -> tuple[np.ndarray, int]:
             # the lines of the result are the bound-bound transitions
             transitions = ion.transitions
             bound = transitions.is_bound_bound
-            where = (transitions.lower_level[bound] == lower) & (
-                transitions.upper_level[bound] == upper
+            where = (transitions.lower_level[bound] == _level(ion, lower)) & (
+                transitions.upper_level[bound] == _level(ion, upper)
             )
             if where.sum() != 1:
                 raise ValueError(f"{name} has {where.sum()} lines {lower}-{upper}")
@@ -183,6 +204,15 @@ def _lines(ion: fiasco.Ion, density: u.Quantity) -> tuple[np.ndarray, int]:
     where = (wavelength >= w.min()) & (wavelength <= w.max())
     photons = g[:, where] * factor[where] * wavelength[where] / _hc
     return photons @ _area(wavelength[where]), int(where.sum())
+
+
+def _level(ion: fiasco.Ion, label: str) -> int:
+    """The number of the one level of an ion with a label like ``"2p 2P1/2"``."""
+    levels = ion.levels
+    where = levels.label == label
+    if where.sum() != 1:
+        raise ValueError(f"{ion.ion_name} has {where.sum()} levels {label!r}")
+    return int(levels.level[where][0])
 
 
 def _two_photon(
@@ -201,15 +231,26 @@ def _two_photon(
     it the populations without the density axis gives the shape the rest of
     the method expects. Solving one temperature at a time instead costs fifty
     times as much, since every solve rebuilds the rates.
-    """
-    populations = ion.level_populations(
-        density,
-        couple_density_to_temperature=True,
-        include_protons=False,  # as fiasco computes the two-photon continuum
-    )
 
-    def level_populations(*args: object, **kwargs: object) -> u.Quantity:
+    The populations stand in for the call ``two_photon`` makes in
+    :mod:`fiasco` 0.8.2, and any other call is an error, so that a change in
+    :mod:`fiasco` stops this rather than giving the wrong populations.
+    """
+    # as fiasco computes the two-photon continuum, without protons
+    expected = dict(couple_density_to_temperature=True, include_protons=False)
+    populations = ion.level_populations(density, **expected)
+
+    def level_populations(
+        electron_density: u.Quantity,
+        **kwargs: object,
+    ) -> u.Quantity:
         """The populations solved above, without the density axis."""
+        if kwargs != expected or not np.array_equal(electron_density, density):
+            raise RuntimeError(
+                "fiasco's two_photon no longer asks for the level populations "
+                "this workaround solves for: "
+                f"{kwargs=}, {electron_density=}"
+            )
         return populations[:, 0]
 
     ion.level_populations = level_populations
@@ -250,20 +291,13 @@ def ion_response(name: str, lines: bool) -> dict[str, np.ndarray]:
         except fiasco.util.exceptions.MissingDatasetException as e:
             missing.append(f"lines: {e}")
 
-    # The continua vary slowly, so they are summed over the wavelengths the
-    # effective area is tabulated at, as ``aia_bp_make_tresp`` sums the
-    # emissivity.
-    w = _state["wavelength"]
-    step = (w[-1] - w[0]) / (w.size - 1)
-    weight = _area(w) * (w / _hc * step)[:, np.newaxis]
+    weight = _state["weight"]
     unit = u.erg * u.cm**3 / u.s / u.AA
-    wavelength = w * u.AA
+    wavelength = _state["wavelength"] * u.AA
     if ion.ionization_stage > 1:
         try:
             # Per steradian in fiasco 0.8.2, as in IDL, unlike its lines and
-            # other continua: its own free_free_radiative_loss is 4 pi times
-            # the integral over wavelength, and its tests compare it with the
-            # IDL without the 4 pi they give the free-bound continuum.
+            # other continua, which `_check_free_free` makes sure of.
             ff = 4 * np.pi * ion.free_free(wavelength)
             ff = ff * ion.abundance * ion.ionization_fraction[:, np.newaxis]
             result["free_free"] = ff.to_value(unit) @ weight
@@ -297,6 +331,16 @@ def _ions(database: pathlib.Path) -> list[tuple[str, bool, float]]:
     memory computing it takes in gigabytes, the largest first, so that the
     slowest ions do not start last.
     """
+    # utu.spectrum.ions lists the ions of the default database of fiasco,
+    # whatever the database it is given, so it would miss the lines of an
+    # ion only `database` has.
+    extra = set(fiasco.list_ions(hdf5_dbase_root=database)) - set(fiasco.list_ions())
+    if extra:
+        raise ValueError(
+            f"{database} has ions the default database of fiasco does not, "
+            f"which utu.spectrum.ions would leave out: {sorted(extra)}"
+        )
+
     with_lines = set(
         utu.spectrum.ions(
             wavelength_min=25 * u.AA,
@@ -361,7 +405,13 @@ def main(
     area = []
     for channel in ssw.channels:
         wave, effarea, platescale = ssw.effective_area(area_file, channel)
-        effarea = np.interp(wavelength, wave, effarea, left=0, right=0)
+        if not np.array_equal(wave, wavelength):
+            raise ValueError(
+                f"the effective area of {channel} angstroms is tabulated at "
+                f"other wavelengths than that of {ssw.channels[0]} angstroms"
+            )
+        # in double precision, since the file stores single
+        effarea = effarea.astype(float)
         area.append(effarea * platescale / (4 * np.pi))
     area = np.stack(area, axis=-1)
 
@@ -373,6 +423,7 @@ def main(
         hdf5_dbase_root=database,
     )
     version = _chianti_version(database)
+    _check_free_free(database)
 
     # One thread per process: the parallelism is over ions, and a BLAS that
     # starts a thread per core in every process slows the run to a crawl.
@@ -381,7 +432,7 @@ def main(
     for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
         os.environ[variable] = "1"
 
-    done = directory / f"chianti_{version}"
+    done = directory / f"chianti_{version}_{_fingerprint(path)}"
     done.mkdir(exist_ok=True)
     tasks = _ions(database)
     results: dict[str, dict[str, np.ndarray]] = {}
@@ -427,8 +478,13 @@ def main(
             for future in finished:
                 name, _ = running.pop(future)
                 result = future.result()
+                # written in full before it takes its name, so that a run
+                # stopped while writing does not leave a file that looks done
                 file = done / f"{name.replace(' ', '_')}.npz"
-                np.savez(file, **cast(dict[str, Any], result))
+                partial = file.with_name(f"{file.name}.part")
+                with open(partial, "wb") as f:
+                    np.savez(f, **cast(dict[str, Any], result))
+                partial.replace(file)
                 results[name] = result
                 k += 1
                 elapsed = time.perf_counter() - start
@@ -439,6 +495,9 @@ def main(
                     flush=True,
                 )
 
+    # summed in the order of the tasks rather than the order they finished,
+    # so that every run writes the same table
+    results = {name: results[name] for name, _, _ in tasks}
     total = np.zeros((logte.size, len(ssw.channels)))
     for result in results.values():
         for component in components:
@@ -457,8 +516,9 @@ def main(
         channels=ssw.channels,
         description=(
             "Temperature response of the AIA EUV channels (thin focal-plane "
-            f"filters, with crosstalk) from CHIANTI {version}, with the "
-            "effective areas, plasma, and He II boost of SolarSoft version 10, "
+            f"filters, with crosstalk) from CHIANTI {version}, its lines, "
+            "continua, and ionization equilibrium, with the effective areas, "
+            "abundances, pressure, and He II boost of SolarSoft version 10, "
             "without the time-dependent corrections. response_N is the "
             "response of channel N. The emission measure is that of n_e n_H."
         ),
@@ -473,7 +533,7 @@ def main(
             ionization_fraction=ionization_fraction,
             pressure=str(pressure),
             protons=True,
-            boost={f"{k[0]} {k[1]}-{k[2]}": v for k, v in boost.items()},
+            boost={f"{k[0]} {k[1]} - {k[2]}": v for k, v in boost.items()},
             ions=len(results),
             lines=sum(int(r["n_lines"]) for r in results.values()),
         ),
@@ -486,6 +546,52 @@ def main(
     print(f"{len(missing)} ions are missing a component:")
     for name, why in missing.items():
         print(f"  {name}: {'; '.join(why)}")
+
+
+def _check_free_free(database: pathlib.Path) -> None:
+    """
+    Check that the free-free continuum of :mod:`fiasco` is per steradian, as
+    the factor of :math:`4\\pi` in :func:`ion_response` assumes.
+
+    Its integral over wavelength is compared with the radiative loss
+    :mod:`fiasco` computes from the integrated Gaunt factor, which is
+    :math:`4\\pi` times as much, give or take the few percent between the two
+    Gaunt factors.
+    """
+    ion = fiasco.Ion("H 2", [1e6, 1e7, 1e8] * u.K, hdf5_dbase_root=database)
+    wavelength = np.geomspace(1e-3, 1e7, 4001) * u.AA
+    integral = np.trapezoid(ion.free_free(wavelength), wavelength, axis=-1)
+    ratio = ion.free_free_radiative_loss() / integral
+    ratio = ratio.to_value(u.dimensionless_unscaled)
+    if not np.allclose(ratio, 4 * np.pi, rtol=0.1):
+        raise RuntimeError(
+            "the free-free continuum of fiasco is no longer per steradian, "
+            f"since its radiative loss is {ratio} times its integral over "
+            "wavelength instead of 4 pi, so ion_response must not multiply "
+            "it by 4 pi"
+        )
+
+
+def _fingerprint(area: pathlib.Path) -> str:
+    """
+    A digest of what the result of an ion depends on besides the database:
+    the code of this script and of the one it imports, the file of effective
+    areas, and the versions of :mod:`fiasco` and :mod:`utu`.
+    """
+    digest = hashlib.sha256()
+    for path in (pathlib.Path(__file__), pathlib.Path(ssw.__file__), area):
+        digest.update(path.read_bytes())
+    for package in ("fiasco", "utu"):
+        digest.update(_version(package).encode())
+    return digest.hexdigest()[:12]
+
+
+def _workers() -> int:
+    """The number of processes to use by default, one per CPU."""
+    result = os.cpu_count() or 1
+    if sys.platform == "win32":
+        result = min(result, workers_max_windows)
+    return result
 
 
 def _chianti_version(database: pathlib.Path) -> str:
@@ -506,7 +612,7 @@ def _version(package: str) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("directory", type=pathlib.Path)
-    parser.add_argument("--workers", type=int, default=os.cpu_count())
+    parser.add_argument("--workers", type=int, default=_workers())
     parser.add_argument(
         "--memory",
         type=float,

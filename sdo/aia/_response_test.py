@@ -130,6 +130,33 @@ def test_temperature_response_corrections_chianti() -> None:
         assert np.allclose(_values(new_eve[index]), expected, rtol=1e-12, atol=0)
 
 
+@pytest.mark.parametrize("channel", [94, 131, 171, 193, 211, 304, 335])
+def test_temperature_response_chianti_solarsoft(channel: int) -> None:
+    """
+    The response from CHIANTI 11 agrees with that of SolarSoft where the
+    atomic data has changed little: within 10% at the peak of each channel,
+    which the boost of He II dominates in 304 angstroms, and within 2% at
+    log T 8, where the free-free continuum dominates.
+    """
+    ssw = sdo.aia.temperature_response(channel * u.AA)
+    new = sdo.aia.temperature_response(channel * u.AA, emissivity="CHIANTI 11")
+    logt = np.log10(_values(ssw.inputs).to_value(u.K))
+    ssw = _values(ssw.outputs[dict(wavelength=0)]).value
+    new = _values(new.outputs[dict(wavelength=0)]).value
+
+    assert 0.9 < new.max() / ssw.max() < 1.1
+    hot = np.argmin(np.abs(logt - 8))
+    assert 0.98 < new[hot] / ssw[hot] < 1.02
+
+
+def test_temperature_response_positional() -> None:
+    """The arguments of version 1.2.0 keep their positions."""
+    result = sdo.aia.temperature_response(
+        [171] * u.AA, None, False, False, "channel", "logte"
+    )
+    assert result.outputs.shape == dict(logte=101, channel=1)
+
+
 @pytest.mark.parametrize(
     argnames="kwargs",
     argvalues=[
