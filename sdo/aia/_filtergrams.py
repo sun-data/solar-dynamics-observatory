@@ -270,6 +270,158 @@ class Filtergram(
 
         return self
 
+    def resample(
+        self,
+        position: na.AbstractCartesian2dVectorArray,
+        axis: tuple[str, str],
+        fwhm: u.Quantity | na.AbstractScalar,
+        fwhm_aia: u.Quantity | na.AbstractScalar = 1.3 * u.arcsec,
+        uncertainty: None | u.Quantity | na.AbstractScalar = None,
+        seed: None | int = 0,
+    ) -> tuple[na.AbstractScalar, na.AbstractScalar]:
+        """
+        Blur these images to a coarser resolution and sum them onto other
+        pixels, such as those of another instrument,
+        along with their uncertainty.
+
+        The images are blurred by a Gaussian whose width at half its maximum
+        is the difference in quadrature between `fwhm` and `fwhm_aia`,
+        so that a point source is as wide as the other instrument sees it,
+        and then summed onto the new pixels by conservative regridding,
+        which keeps the total signal.
+
+        The variance of each pixel is summed onto the new pixels the same
+        way, which alone would overestimate the noise,
+        since the blur averages neighboring pixels together,
+        and the pixels which straddle two new pixels are split between them.
+        How much both average the noise down is found by blurring and
+        resampling white noise of unit variance,
+        and the summed variance of each image is scaled by it.
+
+        Parameters
+        ----------
+        position
+            The helioprojective coordinates of the vertices of the new pixels.
+        axis
+            The two logical axes of `position` along which the new pixels are
+            arranged.
+        fwhm
+            The full width at half maximum of the point-spread function of the
+            new pixels, which must not be smaller than `fwhm_aia`.
+        fwhm_aia
+            The full width at half maximum of the core of the point-spread
+            function of AIA.
+        uncertainty
+            The one-sigma uncertainty of each pixel of these images.
+            If :obj:`None` (the default), :func:`sdo.aia.uncertainty` of the
+            images is used.
+        seed
+            The seed of the white noise which finds how much the noise is
+            averaged down.
+            If :obj:`None`, the noise and the uncertainty differ a little from
+            one call to the next.
+
+        Returns
+        -------
+        counts
+            The signal of each new pixel, in DN.
+        uncertainty
+            The one-sigma uncertainty of `counts`.
+
+        Examples
+        --------
+        Sum a registered image of AIA 171 Å onto pixels of 1 arcsecond, as if
+        it were seen at a resolution of 2 arcseconds.
+
+        .. jupyter-execute::
+
+            import matplotlib.pyplot as plt
+            import astropy.units as u
+            import astropy.visualization
+            import named_arrays as na
+            import sdo
+
+            aia = sdo.aia.open(
+                time_start="2021-09-23T06:00",
+                wavelength=171 * u.AA,
+                register=True,
+            )
+            aia = aia[dict(
+                time=0,
+                wavelength=0,
+                detector_x=slice(1900, 2200),
+                detector_y=slice(1900, 2200),
+            )]
+
+            position = na.Cartesian2dVectorArray(
+                x=na.linspace(-60, 60, axis="x", num=121) * u.arcsec,
+                y=na.linspace(-60, 60, axis="y", num=121) * u.arcsec,
+            )
+
+            counts, uncertainty = aia.resample(
+                position=position,
+                axis=("x", "y"),
+                fwhm=2 * u.arcsec,
+            )
+
+            with astropy.visualization.quantity_support():
+                fig, ax = plt.subplots(constrained_layout=True)
+                na.plt.pcolormesh(position, C=counts, ax=ax)
+                ax.set_aspect("equal")
+        """
+        axis_detector = (self.axis_detector_x, self.axis_detector_y)
+
+        if uncertainty is None:
+            uncertainty = sdo.aia.uncertainty(
+                counts=self.outputs,
+                wavelength=self.inputs.wavelength,
+            )
+
+        difference = np.square(fwhm) - np.square(fwhm_aia)
+        if np.any(difference < 0):
+            raise ValueError(
+                f"`fwhm`, {fwhm}, must not be smaller than `fwhm_aia`, {fwhm_aia}."
+            )
+        sigma = np.sqrt(difference) / (2 * np.sqrt(2 * np.log(2)))
+
+        def blur(a: na.AbstractScalar) -> na.AbstractScalar:
+            if np.all(sigma == 0):
+                return a
+            cdelt = self.inputs.cdelt.position
+            scale = (np.abs(cdelt.x).mean() + np.abs(cdelt.y).mean()) / 2
+            scale = scale.to(u.arcsec)
+            # out to four times the width of the Gaussian, beyond which it is
+            # less than a ten-thousandth of its peak
+            ratio = na.as_named_array(4 * sigma / scale).to(u.dimensionless_unscaled)
+            num = int(np.ceil(ratio.max().ndarray.value))
+            x = na.arange(-num, num + 1, axis=self.axis_detector_x) * scale
+            y = na.arange(-num, num + 1, axis=self.axis_detector_y) * scale
+            kernel = np.exp(-(np.square(x) + np.square(y)) / (2 * np.square(sigma)))
+            kernel = kernel / kernel.sum(axis_detector)
+            return na.convolve(a, kernel, axis=axis_detector)
+
+        weights = na.regridding.weights(
+            coordinates_input=self.inputs.position,
+            coordinates_output=position,
+            axis_input=axis_detector,
+            axis_output=axis,
+            method="conservative",
+        )
+
+        def regrid(a: na.AbstractScalar) -> na.AbstractScalar:
+            return na.regridding.regrid_from_weights(*weights, values_input=a)
+
+        counts = regrid(blur(self.outputs))
+        variance = regrid(np.square(uncertainty))
+
+        shape = self.outputs.shape
+        noise = na.random.normal(0, 1, shape_random=shape, seed=seed)
+        noise = regrid(blur(noise))
+        ones = regrid(na.ScalarArray.ones(shape))
+        reduction = np.square(noise).mean(axis) / ones.mean(axis)
+
+        return counts, np.sqrt(reduction * variance)
+
     @classmethod
     def empty(
         cls,

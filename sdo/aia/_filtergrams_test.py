@@ -227,3 +227,116 @@ def test_getitem(tmp_path: pathlib.Path, item: dict) -> None:
     timedelta = cast(na.ScalarArray, images.timedelta)
     index = {a: i for a, i in item.items() if a in timedelta.shape}
     assert np.all(found.timedelta == timedelta[index])
+
+
+def _flat(tmp_path: pathlib.Path, num: int, value: float) -> sdo.aia.Filtergram:
+    """An image of `num` by `num` pixels of 0.6 arcseconds, all equal to `value`."""
+    images = sdo.aia.Filtergram.from_fits(
+        path=_fits(tmp_path / "a.fits", num=num, exptime=2.0),
+        wavelength=171 * u.AA,
+    )
+    outputs = na.ScalarArray.ones(images.outputs.shape) * value * u.DN
+    return dataclasses.replace(images, outputs=outputs)
+
+
+def _grid(num: int, pitch: u.Quantity) -> na.Cartesian2dVectorArray:
+    """The vertices of `num` by `num` pixels centered on the images of `_fits`."""
+    center = na.Cartesian2dVectorArray(100, 200) * u.arcsec
+    edge = (num / 2) * pitch
+    return center + na.Cartesian2dVectorArray(
+        x=na.linspace(-edge, edge, axis="x", num=num + 1),
+        y=na.linspace(-edge, edge, axis="y", num=num + 1),
+    )
+
+
+@pytest.mark.parametrize("fwhm", [1.3 * u.arcsec, 2 * u.arcsec])
+def test_resample_flat(tmp_path: pathlib.Path, fwhm: u.Quantity) -> None:
+    """
+    A flat image stays flat, with the signal of each new pixel its area in
+    AIA pixels times the signal of one, blurred or not.
+    """
+    images = _flat(tmp_path, num=40, value=3)
+    pitch = 1.1 * u.arcsec
+    counts, uncertainty = images.resample(
+        position=_grid(12, pitch),
+        axis=("x", "y"),
+        fwhm=fwhm,
+        uncertainty=1 * u.DN,
+    )
+    area = float(np.square(pitch / (0.6 * u.arcsec)))
+    assert counts.shape == {"y": 12, "x": 12}
+    assert np.allclose(counts.ndarray, 3 * area * u.DN, rtol=1e-6)
+    assert np.all(uncertainty < np.sqrt(area) * u.DN)
+
+
+def test_resample_conserves(tmp_path: pathlib.Path) -> None:
+    """
+    Without a blur, the signal of new pixels which cover the image is all
+    the signal of the image.
+    """
+    images = sdo.aia.Filtergram.from_fits(
+        path=_fits(tmp_path / "a.fits", num=8, exptime=2.0),
+        wavelength=171 * u.AA,
+    )
+    counts, _ = images.resample(
+        position=_grid(5, 1.5 * u.arcsec),
+        axis=("x", "y"),
+        fwhm=1.3 * u.arcsec,
+        uncertainty=1 * u.DN,
+    )
+    assert np.isclose(counts.sum().ndarray, images.outputs.sum().ndarray)
+
+
+def test_resample_noise(tmp_path: pathlib.Path) -> None:
+    """
+    The uncertainty matches the scatter of the new pixels when the images
+    are noisy with that uncertainty, on average over the pixels.
+    """
+    images = _flat(tmp_path, num=40, value=0)
+    position = _grid(12, 1.1 * u.arcsec)
+    num_trial = 200
+    noise = na.random.normal(
+        loc=0,
+        scale=2,
+        shape_random=dict(trial=num_trial) | images.outputs.shape,
+        seed=1,
+    )
+    noisy = dataclasses.replace(images, outputs=noise * u.DN)
+    counts, _ = noisy.resample(
+        position=position,
+        axis=("x", "y"),
+        fwhm=2 * u.arcsec,
+        uncertainty=2 * u.DN,
+    )
+    _, uncertainty = images.resample(
+        position=position,
+        axis=("x", "y"),
+        fwhm=2 * u.arcsec,
+        uncertainty=2 * u.DN,
+    )
+    measured = np.square(counts).mean("trial").mean().ndarray
+    predicted = np.square(uncertainty).mean().ndarray
+    assert np.isclose(measured, predicted, rtol=0.03)
+
+
+def test_resample_uncertainty_default(tmp_path: pathlib.Path) -> None:
+    """Without an uncertainty, that of :func:`sdo.aia.uncertainty` is used."""
+    images = _flat(tmp_path, num=20, value=50)
+    kwargs = dict(position=_grid(6, 1.1 * u.arcsec), axis=("x", "y"), fwhm=2 * u.arcsec)
+    _, found = images.resample(**kwargs)
+    _, expected = images.resample(
+        **kwargs,
+        uncertainty=sdo.aia.uncertainty(images.outputs, images.inputs.wavelength),
+    )
+    assert np.all(found == expected)
+
+
+def test_resample_too_sharp(tmp_path: pathlib.Path) -> None:
+    """AIA cannot be made sharper than it is."""
+    images = _flat(tmp_path, num=20, value=1)
+    with pytest.raises(ValueError, match="must not be smaller"):
+        images.resample(
+            position=_grid(6, 1.1 * u.arcsec),
+            axis=("x", "y"),
+            fwhm=1 * u.arcsec,
+        )
