@@ -237,10 +237,11 @@ def temperature_response(
             ax.set_xscale("log")
             ax.set_yscale("log")
             ax.set_ylim(1e-28, 1e-23)
+            ax.set_xlabel("temperature (K)")
             ax.legend(title="dashed: 2024-05-10")
 
-    The ratio of the response from CHIANTI 11 to that of SolarSoft, where the
-    SolarSoft response is at least a hundredth of its peak.
+    The response from CHIANTI 11 compared to that of SolarSoft, both at the
+    start of the mission.
 
     .. jupyter-execute::
 
@@ -248,6 +249,35 @@ def temperature_response(
             wavelength=channels * u.AA,
             emissivity="CHIANTI 11",
         )
+
+        with astropy.visualization.quantity_support():
+            fig, ax = plt.subplots(constrained_layout=True)
+            na.plt.plot(
+                response.inputs,
+                response.outputs,
+                ax=ax,
+                axis="temperature",
+                color=colors,
+                label=labels,
+            )
+            na.plt.plot(
+                response_11.inputs,
+                response_11.outputs,
+                ax=ax,
+                axis="temperature",
+                color=colors,
+                linestyle="--",
+            )
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_ylim(1e-28, 1e-23)
+            ax.set_xlabel("temperature (K)")
+            ax.legend(title="dashed: CHIANTI 11")
+
+    The ratio of the two, where the SolarSoft response is at least a
+    hundredth of its peak.
+
+    .. jupyter-execute::
 
         ratio = response_11.outputs / response.outputs
         peak = response.outputs.max(axis="temperature")
@@ -265,8 +295,10 @@ def temperature_response(
             )
             ax.axhline(1, color="black", linewidth=0.5)
             ax.set_xscale("log")
-            ax.set_yscale("log")
+            ax.set_xlabel("temperature (K)")
             ax.set_ylabel("CHIANTI 11 / SolarSoft")
+            ax.grid(color="0.9", which="both")
+            ax.set_axisbelow(True)
             ax.legend()
     """
     if emissivity not in _files:
