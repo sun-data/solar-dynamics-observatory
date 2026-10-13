@@ -84,8 +84,8 @@ def temperature_response(
 
     With ``emissivity="CHIANTI 11"``, the emissivity is instead computed from
     version 11 of CHIANTI :cite:p:`Dufresne2024`, with everything else as
-    SolarSoft has it, so that the two responses differ by the atomic data
-    alone.
+    SolarSoft has it, so that the two responses differ mainly by the atomic
+    data, and otherwise by how the lines are binned, as the notes describe.
 
     Parameters
     ----------

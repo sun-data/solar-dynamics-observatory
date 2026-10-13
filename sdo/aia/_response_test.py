@@ -149,6 +149,15 @@ def test_temperature_response_chianti_solarsoft(channel: int) -> None:
     assert 0.98 < new[hot] / ssw[hot] < 1.02
 
 
+def test_temperature_response_chianti_version() -> None:
+    """
+    The CHIANTI 11 table was computed from version 11 of CHIANTI, so that a
+    table of another version written in its place does not go unnoticed.
+    """
+    table = sdo.aia._response._table("CHIANTI 11")
+    assert table.meta["chianti"]["version"].startswith("11.")
+
+
 def test_temperature_response_positional() -> None:
     """The arguments of version 1.2.0 keep their positions."""
     result = sdo.aia.temperature_response(
