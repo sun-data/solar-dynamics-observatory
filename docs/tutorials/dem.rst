@@ -178,7 +178,10 @@ region, on every core.
     chi2.median()
 
 The emission measure in four ranges of temperature, the integral of the DEM
-over each.
+over each. :func:`utu.dem.plowman` takes the DEM to be linear in
+:math:`\log_{10} T` between its nodes, so the integral over a range whose
+ends are nodes is the trapezoid rule: each node inside the range counts for a
+whole step, and the two nodes at its ends for half a step each.
 
 .. jupyter-execute::
 
@@ -187,10 +190,15 @@ over each.
 
     ranges = [(5.6, 6.0), (6.0, 6.3), (6.3, 6.6), (6.6, 7.0)]
 
-    em = {
-        r: (dem.outputs * step).sum("temperature", where=(logt >= r[0]) & (logt < r[1]))
-        for r in ranges
-    }
+    def emission_measure(lower, upper):
+        inside = (logt > lower + step / 2) & (logt < upper - step / 2)
+        ends = (np.abs(logt - lower) < step / 2) | (np.abs(logt - upper) < step / 2)
+        return step * (
+            dem.outputs.sum("temperature", where=inside)
+            + dem.outputs.sum("temperature", where=ends) / 2
+        )
+
+    em = {r: emission_measure(*r) for r in ranges}
 
     with astropy.visualization.quantity_support():
         fig, axs = plt.subplots(
