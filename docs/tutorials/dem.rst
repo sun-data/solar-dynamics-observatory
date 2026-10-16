@@ -178,25 +178,27 @@ region, on every core.
     chi2.median()
 
 The emission measure in four ranges of temperature, the integral of the DEM
-over each. :func:`utu.dem.plowman` takes the DEM to be linear in
-:math:`\log_{10} T` between its nodes, so the integral over a range whose
-ends are nodes is the trapezoid rule: each node inside the range counts for a
-whole step, and the two nodes at its ends for half a step each.
+over each. The DEM is per unit :math:`\log_{10} T`, so its inputs are
+replaced with :math:`\log_{10} T` before it is integrated with
+:meth:`~named_arrays.AbstractFunctionArray.integrate`. Along an axis of
+samples, that uses the trapezoid rule. :func:`utu.dem.plowman` takes the DEM
+to be linear in :math:`\log_{10} T` between its nodes, so the trapezoid rule
+is exact over a range whose ends are nodes.
 
 .. jupyter-execute::
 
     logt = np.log10(dem.inputs / u.K)
-    step = 0.05
+    dem_logt = dem.replace(inputs=logt)
 
     ranges = [(5.6, 6.0), (6.0, 6.3), (6.3, 6.6), (6.6, 7.0)]
 
+    def node(value):
+        # the index of the node at this value of log T
+        return int(np.argmin(np.abs(logt - value).ndarray))
+
     def emission_measure(lower, upper):
-        inside = (logt > lower + step / 2) & (logt < upper - step / 2)
-        ends = (np.abs(logt - lower) < step / 2) | (np.abs(logt - upper) < step / 2)
-        return step * (
-            dem.outputs.sum("temperature", where=inside)
-            + dem.outputs.sum("temperature", where=ends) / 2
-        )
+        index = dict(temperature=slice(node(lower), node(upper) + 1))
+        return dem_logt[index].integrate("temperature").outputs
 
     em = {r: emission_measure(*r) for r in ranges}
 
