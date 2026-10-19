@@ -211,6 +211,13 @@ def _prep(
             )
             if register:
                 aia_map = aiapy.calibrate.register(aia_map)
+
+            # The header of a Level 1 image gives the integer which marks a
+            # missing pixel, but a Level 1.5 image is in floating point, where
+            # FITS allows no such keyword, and astropy would warn about it on
+            # every read of the file.
+            aia_map.meta.pop("blank", None)
+
             aia_map.save(file_15)
 
         result[i] = str(file_15)

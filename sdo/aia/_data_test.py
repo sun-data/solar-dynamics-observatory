@@ -1,11 +1,13 @@
 import pytest
 import pathlib
 import shutil
+import warnings
 import joblib
 import numpy as np
 import astropy.units as u
 import astropy.time
 import astropy.table
+import astropy.io.fits
 import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
@@ -194,3 +196,45 @@ def test_prep_pointing_table_stale(
         assert pathlib.Path(result.ndarray.item(0)).is_file()
     finally:
         sdo.aia._data._pointing_table.cache_clear()
+
+
+@pytest.mark.parametrize(
+    argnames="register",
+    argvalues=[
+        False,
+        True,
+    ],
+)
+def test_prep_blank(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pointing_table: astropy.table.QTable,
+    register: bool,
+) -> None:
+    """
+    A Level 1.5 image is in floating point, so its header has no BLANK
+    keyword, which FITS allows only for integer data, and which astropy warns
+    about on every read of the file.
+    """
+
+    def get_pointing_table(**kwargs) -> astropy.table.QTable:
+        return pointing_table
+
+    monkeypatch.setattr(aiapy.calibrate.utils, "get_pointing_table", get_pointing_table)
+    sdo.aia._data._pointing_table.cache_clear()
+
+    file = pathlib.Path(_files.ndarray.item(0))
+    copy = shutil.copy(file, tmp_path / file.name)
+    files = na.ScalarArray(np.array([copy], dtype=object), axes="time")
+
+    try:
+        result = sdo.aia._data._prep(files, register=register)
+    finally:
+        sdo.aia._data._pointing_table.cache_clear()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", astropy.io.fits.verify.VerifyWarning)
+        with astropy.io.fits.open(result.ndarray.item(0)) as hdul:
+            for hdu in hdul:
+                assert "BLANK" not in hdu.header
+                assert hdu.data is not None
