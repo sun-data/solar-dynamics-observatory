@@ -11,6 +11,7 @@ from ._filtergrams import Filtergram
 from ._aia import open
 from ._response import temperature_response
 from ._uncertainty import uncertainty
+from ._dem import dem
 
 __all__ = [
     "urls",
@@ -20,4 +21,5 @@ __all__ = [
     "open",
     "temperature_response",
     "uncertainty",
+    "dem",
 ]

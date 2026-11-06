@@ -3,10 +3,11 @@ Invert AIA images for a DEM
 
 This tutorial finds the differential emission measure (DEM) of an active
 region, how much plasma there is at each temperature along the line of sight
-through each pixel, from six AIA images :cite:p:`Lemen2012`. It uses the
-temperature response of AIA as SolarSoft computes it :cite:p:`Boerner2012`,
-from :func:`sdo.aia.temperature_response`, the uncertainty of each pixel from
-:func:`sdo.aia.uncertainty`, and the regularized inversion of
+through each pixel, from six AIA images :cite:p:`Lemen2012`, with
+:func:`sdo.aia.dem`. It inverts the images against the temperature response
+of AIA as SolarSoft computes it :cite:p:`Boerner2012`, from
+:func:`sdo.aia.temperature_response`, with the uncertainty of each pixel from
+:func:`sdo.aia.uncertainty`, by the regularized inversion of
 :cite:t:`Plowman2020`, :func:`utu.dem.plowman`.
 
 The region is NOAA active region 13664 on 2024 May 10.
@@ -28,7 +29,6 @@ The six channels used for DEMs, registered, so that they share one grid of
     import sunpy.visualization.colormaps
     import named_arrays as na
     import sdo
-    import utu
 
     channels = na.ScalarArray(
         ndarray=[94, 131, 171, 193, 211, 335] * u.AA,
@@ -91,41 +91,14 @@ half of the disk.
         fig.supylabel("helioprojective $y$ (arcsec)")
 
 
-Intensities and uncertainties
------------------------------
-
-The temperature response gives the signal per pixel per second, so the
-images are divided by their exposure times and are per pixel as well.
-
-The uncertainty is that of :func:`aiapy.calibrate.estimate_error`: the shot
-noise of the photons and the noise of the camera. It is estimated from the
-counts before they are divided by the exposure time, since the shot noise
-depends on how many photons were counted.
-
-.. jupyter-execute::
-
-    counts = region.outputs
-
-    intensity = counts / region.timedelta / u.pix
-
-    uncertainty = sdo.aia.uncertainty(
-        counts=counts,
-        wavelength=region.inputs.wavelength,
-    )
-    uncertainty = uncertainty / region.timedelta / u.pix
-
-    # the median signal-to-noise ratio of each channel
-    (intensity / uncertainty).median(("detector_x", "detector_y"))
-
-
 Temperature response
 --------------------
 
-The response of each channel at the time of the observation, normalized to
-SDO/EVE, which is what ``aia_get_response(/temp, /dn, /evenorm,
-timedepend_date=...)`` returns in SolarSoft. The DEM is found at the
-temperatures of the response, so it is cut to the range the six channels can
-constrain, :math:`\log_{10} T` from 5.5 to 7.5.
+The DEM is inverted against the response of each channel at the time of the
+observation, normalized to SDO/EVE, which is what ``aia_get_response(/temp,
+/dn, /evenorm, timedepend_date=...)`` returns in SolarSoft. The DEM is found
+at the temperatures of the response, so :func:`sdo.aia.dem` cuts it to the
+range the six channels can constrain, :math:`\log_{10} T` from 5.5 to 7.5.
 
 .. jupyter-execute::
 
@@ -160,19 +133,19 @@ constrain, :math:`\log_{10} T` from 5.5 to 7.5.
 Invert
 ------
 
-Every axis of the intensities other than the channel is a separate
-inversion, so this finds the DEM of each of the 360,000 pixels of the
-region, on every core.
+:func:`sdo.aia.dem` divides the images by their exposure times, since the
+response is the signal per pixel per second. The uncertainty is that of
+:func:`aiapy.calibrate.estimate_error`, the shot noise of the photons and the
+noise of the camera, estimated from the counts before they are divided by the
+exposure time, since the shot noise depends on how many photons were counted.
+
+Every axis of the images other than the channel is a separate inversion, so
+this finds the DEM of each of the 360,000 pixels of the region, on every
+core.
 
 .. jupyter-execute::
 
-    dem, chi2 = utu.dem.plowman(
-        intensity=intensity,
-        uncertainty=uncertainty,
-        response=response,
-        axis_channel="wavelength",
-        axis_temperature="temperature",
-    )
+    dem, chi2 = sdo.aia.dem(region)
 
     # the median reduced chi squared, which the inversion aims at one
     chi2.median()
