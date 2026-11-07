@@ -1,7 +1,7 @@
 from typing import Literal
 import astropy.units as u
+import astropy.table
 import named_arrays as na
-import utu
 from ._filtergrams import Filtergram
 from ._response import temperature_response
 from ._uncertainty import uncertainty as _uncertainty
@@ -17,7 +17,16 @@ def dem(
     temperature_min: u.Quantity = 10**5.5 * u.K,
     temperature_max: u.Quantity = 10**7.5 * u.K,
     eve: bool = True,
+    chiantifix: bool = False,
+    correction_table: None | astropy.table.QTable = None,
     emissivity: Literal["SolarSoft", "CHIANTI 11"] = "SolarSoft",
+    smoothness: float = 8,
+    chi2_target: float = 1,
+    tolerance: float = 0.1,
+    steps: tuple[float, float] = (0.1, 0.5),
+    iterations_max: int = 100,
+    iterations_min: int = 5,
+    floor: None | u.Quantity = None,
     axis_temperature: str = "temperature",
 ) -> tuple[na.FunctionArray[na.AbstractScalar, na.AbstractScalar], na.AbstractScalar]:
     r"""
@@ -40,10 +49,13 @@ def dem(
         inversion.
     uncertainty
         The one-sigma uncertainty of the counts of each image, in DN, as
-        :attr:`Filtergram.outputs` is. If :obj:`None` (the default), it is
-        that of :func:`uncertainty`, the noise of the photons and of the
-        camera. Give it to add a systematic uncertainty of a channel, for
-        example.
+        :attr:`Filtergram.outputs` is, before they are divided by the
+        exposure time. If :obj:`None` (the default), it is that of
+        :func:`uncertainty`, the noise of the photons and of the camera.
+        An uncertainty given replaces that noise rather than adding to it,
+        so a systematic uncertainty is added to :func:`uncertainty` in
+        quadrature, and one in DN/s is first multiplied by
+        ``filtergram.timedelta``.
     temperature_min
         The lowest temperature of the DEM.
     temperature_max
@@ -54,8 +66,37 @@ def dem(
         Whether to normalize the response to SDO/EVE, which SolarSoft
         recommends together with the correction for the time of the
         observation, see :func:`temperature_response`.
+    chiantifix
+        Whether to add the empirical correction of the 94 angstrom channel
+        for emission missing from CHIANTI, which requires `eve`, see
+        :func:`temperature_response`.
+    correction_table
+        The table of the degradation and EVE normalization of each channel,
+        see :func:`temperature_response`. If :obj:`None` (the default), it
+        is fetched from SolarSoft.
     emissivity
         The emissivity of the response, see :func:`temperature_response`.
+    smoothness
+        How many e-foldings per decade of temperature the DEM may change by
+        before the regularization resists, see :func:`utu.dem.plowman`.
+    chi2_target
+        The reduced :math:`\chi^2` the inversion aims for, see
+        :func:`utu.dem.plowman`.
+    tolerance
+        How close to `chi2_target` is close enough, see
+        :func:`utu.dem.plowman`.
+    steps
+        The small and the large fraction of the way to the linearized
+        solution to try at each step, see :func:`utu.dem.plowman`.
+    iterations_max
+        The most steps to take for any one pixel, see
+        :func:`utu.dem.plowman`.
+    iterations_min
+        How long to persist with a pixel whose :math:`\chi^2` has stalled,
+        see :func:`utu.dem.plowman`.
+    floor
+        The least intensity the initial guess assumes in any channel, in
+        units convertible to DN/s/pix, see :func:`utu.dem.plowman`.
     axis_temperature
         The name of the axis of temperature of the result.
 
@@ -124,6 +165,10 @@ def dem(
             ax.set_xlabel(f"temperature ({dem.inputs.unit:latex_inline})")
             ax.set_ylabel(f"DEM ({dem.outputs.unit:latex_inline})")
     """
+    # utu imports fiasco and matplotlib, which take a second, so it is
+    # imported only by those who invert
+    import utu
+
     axis_channel = filtergram.axis_wavelength
     counts = filtergram.outputs
     wavelength = filtergram.inputs.wavelength
@@ -132,15 +177,18 @@ def dem(
         uncertainty = _uncertainty(counts=counts, wavelength=wavelength)
 
     # the response is per pixel per second
-    intensity = counts / filtergram.timedelta / u.pix
-    uncertainty = uncertainty / filtergram.timedelta / u.pix
+    per = filtergram.timedelta * u.pix
+    intensity = counts / per
+    uncertainty = uncertainty / per
 
     response = temperature_response(
         wavelength=wavelength,
         time=filtergram.inputs.time.ndarray.min(),
         eve=eve,
+        chiantifix=chiantifix,
         axis_wavelength=axis_channel,
         axis_temperature=axis_temperature,
+        correction_table=correction_table,
         emissivity=emissivity,
     )
     t = response.inputs
@@ -152,4 +200,11 @@ def dem(
         response=response,
         axis_channel=axis_channel,
         axis_temperature=axis_temperature,
+        smoothness=smoothness,
+        chi2_target=chi2_target,
+        tolerance=tolerance,
+        steps=steps,
+        iterations_max=iterations_max,
+        iterations_min=iterations_min,
+        floor=floor,
     )

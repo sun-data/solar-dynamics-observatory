@@ -91,6 +91,28 @@ half of the disk.
         fig.supylabel("helioprojective $y$ (arcsec)")
 
 
+Signal to noise
+---------------
+
+The images are weighted by their uncertainty, that of
+:func:`sdo.aia.uncertainty`, which is the same as
+:func:`aiapy.calibrate.estimate_error`: the shot noise of the photons and the
+noise of the camera. It is estimated from the counts, before they are divided
+by the exposure time, since the shot noise depends on how many photons were
+counted. The median signal-to-noise ratio of each channel shows which of them
+are the least certain: 94, 131, and 335 angstroms, which see the least of the
+plasma of the region.
+
+.. jupyter-execute::
+
+    uncertainty = sdo.aia.uncertainty(
+        counts=region.outputs,
+        wavelength=region.inputs.wavelength,
+    )
+
+    (region.outputs / uncertainty).median(("detector_x", "detector_y"))
+
+
 Temperature response
 --------------------
 
@@ -133,11 +155,8 @@ range the six channels can constrain, :math:`\log_{10} T` from 5.5 to 7.5.
 Invert
 ------
 
-:func:`sdo.aia.dem` divides the images by their exposure times, since the
-response is the signal per pixel per second. The uncertainty is that of
-:func:`aiapy.calibrate.estimate_error`, the shot noise of the photons and the
-noise of the camera, estimated from the counts before they are divided by the
-exposure time, since the shot noise depends on how many photons were counted.
+:func:`sdo.aia.dem` divides the images and their uncertainties by the
+exposure times, since the response is the signal per pixel per second.
 
 Every axis of the images other than the channel is a separate inversion, so
 this finds the DEM of each of the 360,000 pixels of the region, on every

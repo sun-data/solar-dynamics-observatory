@@ -1,7 +1,9 @@
+import inspect
 import pytest
 import numpy as np
 import astropy.units as u
 import astropy.time
+import aiapy.calibrate.utils
 import named_arrays as na
 import utu
 import sdo
@@ -68,6 +70,26 @@ def _filtergram() -> sdo.aia.Filtergram:
     )
 
 
+def _plowman_call(**kwargs: object) -> dict[str, object]:
+    """
+    Call :func:`sdo.aia.dem` on :func:`_filtergram` with the inversion
+    stubbed out, and return the arguments the inversion was given.
+    """
+    calls = []
+
+    def plowman(**k: object) -> tuple[na.FunctionArray, na.ScalarArray]:
+        """Stand in for the inversion, remembering what it was given."""
+        calls.append(k)
+        return na.FunctionArray(None, None), na.ScalarArray(0)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(utu.dem, "plowman", plowman)
+        sdo.aia.dem(_filtergram(), **kwargs)
+
+    (call,) = calls
+    return call
+
+
 def test_dem() -> None:
     """
     Check the DEM is the inversion of the intensities, with the uncertainty
@@ -116,31 +138,21 @@ def test_dem() -> None:
     argvalues=[
         dict(temperature_min=10**6 * u.K, temperature_max=10**7 * u.K),
         dict(eve=False),
+        dict(chiantifix=True),
         dict(emissivity="CHIANTI 11"),
     ],
 )
 def test_dem_response(kwargs: dict) -> None:
     """Check the response is the one asked for."""
-    calls = []
+    call = _plowman_call(axis_temperature="t", **kwargs)
 
-    def plowman(**k: object) -> tuple[na.FunctionArray, na.ScalarArray]:
-        """Stand in for the inversion, remembering what it was given."""
-        calls.append(k)
-        return na.FunctionArray(None, None), na.ScalarArray(0)
-
-    filtergram = _filtergram()
-
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(utu.dem, "plowman", plowman)
-        sdo.aia.dem(filtergram, axis_temperature="t", **kwargs)
-
-    (call,) = calls
     temperature_min = kwargs.get("temperature_min", 10**5.5 * u.K)
     temperature_max = kwargs.get("temperature_max", 10**7.5 * u.K)
     response = sdo.aia.temperature_response(
         wavelength=_channels,
         time=_time,
         eve=kwargs.get("eve", True),
+        chiantifix=kwargs.get("chiantifix", False),
         axis_wavelength="channel",
         axis_temperature="t",
         emissivity=kwargs.get("emissivity", "SolarSoft"),
@@ -151,23 +163,80 @@ def test_dem_response(kwargs: dict) -> None:
     assert np.all(call["response"].outputs == response.outputs)
 
 
+def test_dem_correction_table() -> None:
+    """Check a correction table given is the one the response is corrected with."""
+    table = aiapy.calibrate.utils.get_correction_table("SSW")
+    table["EFF_AREA"] *= 2
+
+    call = _plowman_call(axis_temperature="t", correction_table=table)
+
+    response = sdo.aia.temperature_response(
+        wavelength=_channels,
+        time=_time,
+        eve=True,
+        axis_wavelength="channel",
+        axis_temperature="t",
+        correction_table=table,
+    )
+    t = response.inputs
+    response = response[(t >= 10**5.5 * u.K) & (t <= 10**7.5 * u.K)]
+    assert np.all(call["response"].outputs == response.outputs)
+
+    # the table given changes the response, so it is not the default
+    default = _plowman_call(axis_temperature="t")
+    assert np.all(call["response"].outputs != default["response"].outputs)
+
+
 def test_dem_uncertainty() -> None:
     """Check an uncertainty given is used in place of the default."""
-    calls = []
-
-    def plowman(**k: object) -> tuple[na.FunctionArray, na.ScalarArray]:
-        """Stand in for the inversion, remembering what it was given."""
-        calls.append(k)
-        return na.FunctionArray(None, None), na.ScalarArray(0)
-
     filtergram = _filtergram()
     uncertainty = 3 * sdo.aia.uncertainty(filtergram.outputs, _channels)
 
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(utu.dem, "plowman", plowman)
-        sdo.aia.dem(filtergram, uncertainty=uncertainty)
+    call = _plowman_call(uncertainty=uncertainty)
 
-    (call,) = calls
     expected = uncertainty / _timedelta / u.pix
     assert np.all(call["uncertainty"] == expected)
     assert call["axis_channel"] == "channel"
+
+
+_plowman_arguments = [
+    "smoothness",
+    "chi2_target",
+    "tolerance",
+    "steps",
+    "iterations_max",
+    "iterations_min",
+    "floor",
+]
+"""The arguments of :func:`utu.dem.plowman` that :func:`sdo.aia.dem` passes on."""
+
+
+def test_dem_plowman_defaults() -> None:
+    """Check the arguments passed to the inversion default to its own defaults."""
+    dem = inspect.signature(sdo.aia.dem).parameters
+    plowman = inspect.signature(utu.dem.plowman).parameters
+    for name in _plowman_arguments:
+        assert dem[name].default == plowman[name].default
+
+    call = _plowman_call()
+    for name in _plowman_arguments:
+        assert call[name] == plowman[name].default
+
+
+@pytest.mark.parametrize(
+    argnames="kwargs",
+    argvalues=[
+        dict(smoothness=4),
+        dict(chi2_target=0.5),
+        dict(tolerance=0.01),
+        dict(steps=(0.2, 0.75)),
+        dict(iterations_max=10),
+        dict(iterations_min=2),
+        dict(floor=1 * u.DN / u.s / u.pix),
+    ],
+)
+def test_dem_plowman(kwargs: dict) -> None:
+    """Check the arguments of the inversion given are passed on to it."""
+    call = _plowman_call(**kwargs)
+    for name, value in kwargs.items():
+        assert call[name] == value
