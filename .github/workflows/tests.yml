@@ -17,11 +17,12 @@ concurrency:
 
 jobs:
   download:
-    # The images the tests open are downloaded from JSOC by this job alone,
-    # which is the one that tests downloading them, and shared with every
-    # other job, so that JSOC serves them once a run and not once a job.
-    # The macOS runners cannot connect to jsoc1.stanford.edu, which serves
-    # the files, although they can search jsoc.stanford.edu.
+    # The images the tests open are searched for and downloaded from JSOC by
+    # this job alone, which is the one that tests searching and downloading,
+    # and shared with every other job, with the results of the searches, so
+    # that JSOC serves them once a run and not once a job. The macOS runners
+    # cannot connect to jsoc1.stanford.edu, which serves the files, and the
+    # searches of jsoc.stanford.edu time out now and then.
     runs-on: ubuntu-latest
     name: JSOC download, Python 3.13 tests
     steps:
@@ -44,10 +45,13 @@ jobs:
         with:
           name: jsoc
           # The images as JSOC serves them, without the Level 1.5 images
-          # prepared from them, which every job prepares for itself.
+          # prepared from them, which every job prepares for itself, and the
+          # searches for them, which sdo caches by their arguments.
           path: |
             ~/.sdo/cache/SUM*
             !~/.sdo/cache/SUM*/**/*_lev15*.fits
+            ~/.sdo/cache/sdo/aia/_data/_urls
+            ~/.sdo/cache/sdo/hmi/_data/_search
           if-no-files-found: error
           retention-days: 1
       - name: Upload coverage to Codecov
