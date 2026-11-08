@@ -21,6 +21,7 @@ dependencies = [
     "sunpy",
     "aiapy>=0.11",
     "named-arrays~=2.14",
+    "utu~=0.5",
 ]
 dynamic = ["version"]
 
@@ -38,7 +39,6 @@ doc = [
     "ipykernel",
     "jupyter-sphinx",
     "sphinx-favicon",
-    "utu>=0.3",
 ]
 
 [project.urls]
