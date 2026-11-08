@@ -1,9 +1,12 @@
-"""Refuse to contact JSOC from the tests, where they may not."""
+"""Refuse to contact JSOC from the tests where they may not, and stand in for it."""
 
 from typing import Callable
 import os
 import socket
 import pytest
+import requests
+import sunpy.net.jsoc
+from sdo import _retry
 
 jsoc = os.environ.get("SDO_TEST_JSOC", "1") != "0"
 """
@@ -45,6 +48,72 @@ if not jsoc:
     # Here rather than in a fixture, since the tests download what they
     # open as they are collected, before any fixture runs.
     socket.getaddrinfo = refuse_jsoc(socket.getaddrinfo)
+
+
+@pytest.fixture
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Stand in for the waits between retries, and return how long each was."""
+    result = []
+    monkeypatch.setattr(_retry, "_sleep", result.append)
+    return result
+
+
+path = "/SUM1/D1/S00000/image_lev1.fits"
+"""The path of an image as JSOC serves it, which the tests stand in for."""
+
+url = "http://jsoc.stanford.edu" + path
+"""The URL of :data:`path`."""
+
+
+def response(status: int, content: bytes = b"") -> requests.Response:
+    """
+    An answer of the server to :data:`url`, with a status and contents, as
+    :mod:`requests` makes one.
+
+    Parameters
+    ----------
+    status
+        The status of the answer.
+    content
+        The contents of the answer.
+    """
+    result = requests.Response()
+    result.status_code = status
+    result._content = content
+    result.url = url
+    return result
+
+
+@pytest.fixture
+def jsoc_searches(monkeypatch: pytest.MonkeyPatch) -> Callable[[list], list]:
+    """
+    Stand in for the searches of JSOC.
+
+    Returns a function which takes what each search in turn finds, or the
+    error it raises, the last of them for every search after, and which
+    returns the list of the searches made.
+    """
+
+    def stand_in(answers: list) -> list:
+        """Answer the searches of JSOC with `answers`, in turn."""
+        calls = []
+
+        def search(
+            self: sunpy.net.jsoc.JSOCClient,
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            """Answer with the next of `answers`."""
+            calls.append(args)
+            answer = answers[min(len(calls), len(answers)) - 1]
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+
+        monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
+        return calls
+
+    return stand_in
 
 
 def pytest_configure(config: pytest.Config) -> None:

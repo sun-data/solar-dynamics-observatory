@@ -6,12 +6,10 @@ import astropy.units as u
 import astropy.time
 import astropy.table
 import sunpy.net.attrs
-import sunpy.net.jsoc
 import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
-from .._data import download
-from .._retry import retry
+from .._data import download, _search_jsoc
 
 __all__ = [
     "urls",
@@ -34,9 +32,8 @@ def urls(
     find the URLs of the corresponding AIA observations.
 
     A search which fails for a reason that may pass is made again, as
-    :func:`sdo.download` makes a download again. The retry is made around
-    the cached search, so that the function the cache keys its results by
-    does not change, and the searches it already holds stay valid.
+    :func:`sdo.download` makes a download again, and so is one JSOC answers
+    without the paths of the files, as it does while its storage is down.
 
     Parameters
     ----------
@@ -65,16 +62,13 @@ def urls(
     if not isinstance(cache, joblib.Memory):
         cache = joblib.Memory(location=cache, verbose=False)
 
-    return retry(
-        functools.partial(
-            cache.cache(_urls),
-            time_start=time_start,
-            time_stop=time_stop,
-            wavelength=wavelength,
-            series=series,
-            axis_time=axis_time,
-            limit=limit,
-        )
+    return cache.cache(_urls)(
+        time_start=time_start,
+        time_stop=time_stop,
+        wavelength=wavelength,
+        series=series,
+        axis_time=axis_time,
+        limit=limit,
     )
 
 
@@ -103,6 +97,9 @@ def _urls(
         sunpy.net.attrs.jsoc.Series(series),
     )
 
+    # the range as it was asked for, since a limit moves its start
+    between = f"between {time_start.isot} and {time_stop.isot}"
+
     if limit is not None:
         timedelta = (time_stop - time_start).to(u.s)
         time_start = time_start + timedelta / 2
@@ -115,14 +112,21 @@ def _urls(
 
     urls = []
 
-    client = sunpy.net.jsoc.JSOCClient()
-
     for w in wavelength.ndindex():
         channel = wavelength[w].ndarray
 
         attrs_w = attrs + (sunpy.net.attrs.jsoc.Wavelength(channel),)
 
-        response = client.search(*attrs_w)
+        response = _search_jsoc(*attrs_w, segment="image")
+
+        # A channel can have a gap, and a range which falls in one comes
+        # back empty. Said here rather than left to `na.stack`, which would
+        # raise an `IndexError` from an empty list, naming neither the
+        # channel nor the range which found nothing.
+        if len(response) == 0:
+            raise ValueError(
+                f"no images of `{series}` at {channel} were found {between}"
+            )
 
         urls_w = []
 
