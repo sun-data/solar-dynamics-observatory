@@ -1,12 +1,18 @@
+from typing import Callable
 import email.message
+import http.client
+import json
+import logging
 import pathlib
-import time
 import urllib.error
 import pytest
-import numpy as np
+import astropy.table
+import astropy.units as u
 import requests
+import sunpy.net.jsoc
 import named_arrays as na
 import sdo
+import sdo.conftest
 from sdo import _retry
 
 _url = "http://jsoc.stanford.edu/SUM1/D1/S00000/image_lev1.fits"
@@ -22,77 +28,102 @@ def _response(status: int, content: bytes = b"") -> requests.Response:
     return response
 
 
+def _http_error(status: int) -> urllib.error.HTTPError:
+    """An answer of the server with a status, as urllib raises it."""
+    return urllib.error.HTTPError(_url, status, "", email.message.Message(), None)
+
+
 _transient = [
     requests.ConnectTimeout("connect timed out"),
     requests.ConnectionError("connection refused"),
-    requests.ReadTimeout("read timed out"),
+    requests.exceptions.ChunkedEncodingError("connection dropped"),
     requests.HTTPError(response=_response(503)),
-    urllib.error.URLError("timed out"),
-    urllib.error.HTTPError(_url, 502, "Bad Gateway", email.message.Message(), None),
-    TimeoutError("timed out"),
-    ConnectionResetError("connection reset"),
+    requests.HTTPError(response=_response(429)),
+    urllib.error.URLError(TimeoutError("timed out")),
+    urllib.error.URLError(ConnectionRefusedError("connection refused")),
+    _http_error(502),
+    _http_error(408),
+    http.client.RemoteDisconnected("connection dropped"),
+    http.client.IncompleteRead(b"partial"),
+    json.JSONDecodeError("cut short", '{"status": ', 11),
 ]
 """Errors of requests to JSOC which may pass if the request is made again."""
 
 _permanent = [
+    requests.ReadTimeout("read timed out"),
+    requests.exceptions.SSLError("certificate verify failed"),
     requests.HTTPError(response=_response(404)),
+    requests.HTTPError(response=_response(501)),
     requests.HTTPError("no response"),
-    urllib.error.HTTPError(_url, 404, "Not Found", email.message.Message(), None),
+    urllib.error.URLError("unknown url type"),
+    _http_error(404),
+    TimeoutError("timed out"),
     ValueError("not an error of the network"),
 ]
-"""Errors of requests to JSOC which will not pass."""
+"""Errors of requests to JSOC which will not pass, or should not be made again."""
 
 
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Stand in for the waits between retries, and return how long each was."""
     result = []
-    monkeypatch.setattr(time, "sleep", result.append)
+    monkeypatch.setattr(_retry, "_sleep", result.append)
     return result
 
 
-@pytest.mark.parametrize(argnames="error", argvalues=_transient)
-def test_retry(error: Exception, sleeps: list[float]) -> None:
-    """A request which fails for a reason that may pass is made again until it succeeds."""
+def _failing(
+    error: Exception,
+    failures: int,
+) -> tuple[list, Callable[[], str]]:
+    """
+    A request which raises `error` the first `failures` times it is made, and
+    then returns ``"result"``, and the list of the times it was made.
+    """
     calls = []
 
     def request() -> str:
-        """Fail every time but the last."""
+        """Fail the first `failures` times."""
         calls.append(None)
-        if len(calls) < _retry.attempts:
+        if len(calls) <= failures:
             raise error
         return "result"
 
-    assert _retry.retry(request) == "result"
-    assert len(calls) == _retry.attempts
-    assert sleeps == [_retry.delay * 2**i for i in range(_retry.attempts - 1)]
+    return calls, request
+
+
+@pytest.mark.parametrize(argnames="error", argvalues=_transient)
+def test_retry(
+    error: Exception,
+    sleeps: list[float],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A request which fails for a reason that may pass is made again until it succeeds."""
+    calls, request = _failing(error, failures=2)
+
+    with caplog.at_level(logging.WARNING, logger="sdo._retry"):
+        assert _retry.retry(request) == "result"
+
+    assert len(calls) == 3
+    assert sleeps == [10, 20]
+    assert len(caplog.records) == 2
+    assert repr(error) in caplog.records[0].getMessage()
 
 
 @pytest.mark.parametrize(argnames="error", argvalues=_transient)
 def test_retry_gives_up(error: Exception, sleeps: list[float]) -> None:
     """The error of a request which keeps failing is raised after the last attempt."""
-    calls = []
-
-    def request() -> str:
-        """Fail every time."""
-        calls.append(None)
-        raise error
+    calls, request = _failing(error, failures=3)
 
     with pytest.raises(type(error)):
         _retry.retry(request)
-    assert len(calls) == _retry.attempts
-    assert len(sleeps) == _retry.attempts - 1
+    assert len(calls) == 3
+    assert sleeps == [10, 20]
 
 
 @pytest.mark.parametrize(argnames="error", argvalues=_permanent)
 def test_retry_permanent(error: Exception, sleeps: list[float]) -> None:
     """A request which fails for a reason that will not pass is not made again."""
-    calls = []
-
-    def request() -> str:
-        """Fail every time."""
-        calls.append(None)
-        raise error
+    calls, request = _failing(error, failures=1)
 
     with pytest.raises(type(error)):
         _retry.retry(request)
@@ -116,10 +147,92 @@ def test_download_retry(
 
     monkeypatch.setattr(requests, "get", get)
 
-    urls = na.ScalarArray(np.array([_url], dtype=object), axes="time")
+    urls = na.stack([_url], axis="time").astype(object)
     result = sdo.download(urls, cache=str(tmp_path))
 
     path = pathlib.Path(result.ndarray.item(0))
     assert path.read_bytes() == b"image"
     assert calls == [_url, _url]
-    assert sleeps == [_retry.delay]
+    assert sleeps == [10]
+
+
+def _search_failing_once(
+    monkeypatch: pytest.MonkeyPatch,
+    response: astropy.table.Table,
+) -> list:
+    """
+    Stand in for searches of JSOC, the first of which times out, and the
+    rest of which find `response`, and return the list of the searches made.
+    """
+    calls = []
+
+    def search(
+        self: sunpy.net.jsoc.JSOCClient,
+        *args: object,
+        **kwargs: object,
+    ) -> astropy.table.Table:
+        """Time out the first time, and find `response` after."""
+        calls.append(args)
+        if len(calls) == 1:
+            raise urllib.error.URLError(TimeoutError("timed out"))
+        return response
+
+    monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
+    return calls
+
+
+def test_aia_urls_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+) -> None:
+    """An AIA search which times out is made again."""
+    path = "/SUM1/D1/S00000/image_lev1.fits"
+    calls = _search_failing_once(monkeypatch, astropy.table.Table({"image": [path]}))
+
+    result = sdo.aia.urls(
+        time_start="2021-09-23T06:00:00",
+        time_stop="2021-09-23T06:00:12",
+        wavelength=171 * u.AA,
+        cache=None,
+    )
+
+    assert result.ndarray.item(0) == "http://jsoc.stanford.edu" + path
+    assert len(calls) == 2
+    assert sleeps == [10]
+
+
+def test_hmi_search_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+) -> None:
+    """An HMI search which times out is made again."""
+    path = "/SUM1/D1/S00000/magnetogram.fits"
+    response = astropy.table.Table({"magnetogram": [path]})
+    calls = _search_failing_once(monkeypatch, response)
+
+    result = sdo.hmi.search(
+        time_start="2021-09-23T06:00:00",
+        time_stop="2021-09-23T06:01:00",
+        cache=None,
+    )
+
+    assert result["url"].ndarray.item(0) == "http://jsoc.stanford.edu" + path
+    assert len(calls) == 2
+    assert sleeps == [10]
+
+
+def test_refuse_jsoc() -> None:
+    """The tests refuse a host of JSOC when they may not contact it, and no other."""
+    calls = []
+
+    def getaddrinfo(host: str, *args: object, **kwargs: object) -> list:
+        """Stand in for looking up a host."""
+        calls.append(host)
+        return []
+
+    refuse = sdo.conftest.refuse_jsoc(getaddrinfo)
+
+    with pytest.raises(RuntimeError, match="jsoc1.stanford.edu"):
+        refuse("jsoc1.stanford.edu", 443)
+    assert refuse("hesperia.gsfc.nasa.gov", 443) == []
+    assert calls == ["hesperia.gsfc.nasa.gov"]

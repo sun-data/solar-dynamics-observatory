@@ -208,15 +208,16 @@ def test_download_cache_str(tmp_path: pathlib.Path):
         assert path.is_relative_to(directory)
 
 
-def test_search_empty(monkeypatch: pytest.MonkeyPatch):
+def test_search_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     A range which holds no images says so.
 
     HMI has gaps, and `sdo.hmi.open` searches a range only one cadence wide,
     so this is reachable by asking for a moment during one. JSOC answers
-    such a search with no rows, and a search which does the same stands in
-    for it here, since one which finds nothing cannot be cached, and would
-    contact JSOC from every job of the tests.
+    such a search with no rows, as :func:`test_search_empty_jsoc` checks,
+    and a search which does the same stands in for it here, since one which
+    finds nothing cannot be cached, and would contact JSOC from every job of
+    the tests.
     """
 
     def search(
@@ -229,6 +230,20 @@ def test_search_empty(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
 
+    with pytest.raises(ValueError, match="no images of"):
+        sdo.hmi.search(
+            time_start="2010-01-01T00:00:00",
+            time_stop="2010-01-01T00:01:00",
+            cache=None,
+        )
+
+
+@pytest.mark.jsoc
+def test_search_empty_jsoc() -> None:
+    """
+    JSOC answers a search of a range which holds no images with no rows,
+    which :func:`test_search_empty` stands in for.
+    """
     with pytest.raises(ValueError, match="no images of"):
         sdo.hmi.search(
             time_start="2010-01-01T00:00:00",
