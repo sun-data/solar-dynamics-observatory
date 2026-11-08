@@ -11,6 +11,7 @@ import aiapy.calibrate.utils
 import named_arrays as na
 import sdo
 from .._data import download
+from .._retry import retry
 
 __all__ = [
     "urls",
@@ -31,6 +32,9 @@ def urls(
     """
     Given a time range and an array of wavelengths,
     find the URLs of the corresponding AIA observations.
+
+    A search which fails for a reason that may pass is made again, as
+    :func:`sdo.download` makes a download again.
 
     Parameters
     ----------
@@ -113,7 +117,7 @@ def _urls(
 
         attrs_w = attrs + (sunpy.net.attrs.jsoc.Wavelength(channel),)
 
-        response = client.search(*attrs_w)
+        response = retry(functools.partial(client.search, *attrs_w))
 
         urls_w = []
 

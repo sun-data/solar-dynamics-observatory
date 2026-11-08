@@ -1,4 +1,5 @@
 import joblib
+import functools
 from typing import Literal
 import astropy.units as u
 import astropy.time
@@ -6,6 +7,7 @@ import sunpy.net.attrs
 import sunpy.net.jsoc
 import named_arrays as na
 import sdo
+from .._retry import retry
 
 __all__ = [
     "search",
@@ -60,6 +62,9 @@ def search(
     """
     Find the HMI observations in a time range, and the keywords describing
     them.
+
+    A search which fails for a reason that may pass is made again, as
+    :func:`sdo.download` makes a download again.
 
     Where AIA writes its keywords into the file it serves, the files JSOC
     serves for HMI are the bare image: the primary header has six cards and
@@ -137,7 +142,7 @@ def _search(
 
     client = sunpy.net.jsoc.JSOCClient()
 
-    response = client.search(*attrs)
+    response = retry(functools.partial(client.search, *attrs))
 
     # HMI has gaps, and a range which falls in one comes back empty. Said
     # here rather than left to `na.stack`, which would raise an `IndexError`
