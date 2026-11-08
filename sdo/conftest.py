@@ -4,6 +4,7 @@ from typing import Callable
 import os
 import socket
 import pytest
+from sdo import _retry
 
 jsoc = os.environ.get("SDO_TEST_JSOC", "1") != "0"
 """
@@ -45,6 +46,14 @@ if not jsoc:
     # Here rather than in a fixture, since the tests download what they
     # open as they are collected, before any fixture runs.
     socket.getaddrinfo = refuse_jsoc(socket.getaddrinfo)
+
+
+@pytest.fixture
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Stand in for the waits between retries, and return how long each was."""
+    result = []
+    monkeypatch.setattr(_retry, "_sleep", result.append)
+    return result
 
 
 def pytest_configure(config: pytest.Config) -> None:

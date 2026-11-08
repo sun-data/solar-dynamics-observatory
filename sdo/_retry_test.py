@@ -63,14 +63,6 @@ _permanent = [
 """Errors of requests to JSOC which will not pass, or should not be made again."""
 
 
-@pytest.fixture
-def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Stand in for the waits between retries, and return how long each was."""
-    result = []
-    monkeypatch.setattr(_retry, "_sleep", result.append)
-    return result
-
-
 def _failing(
     error: Exception,
     failures: int,

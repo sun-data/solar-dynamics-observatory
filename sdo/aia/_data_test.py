@@ -9,6 +9,7 @@ import astropy.time
 import astropy.table
 import astropy.io.fits
 import aiapy.calibrate.utils
+import sunpy.net.jsoc
 import named_arrays as na
 import sdo
 
@@ -238,3 +239,32 @@ def test_prep_blank(
             for hdu in hdul:
                 assert "BLANK" not in hdu.header
                 assert hdu.data is not None
+
+
+def test_urls_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    A channel whose range holds no images says so, and names the channel
+    and the range.
+
+    AIA has gaps, in a channel or in all of them, and JSOC answers a search
+    of a range which falls in one with no rows, which a search which does
+    the same stands in for here.
+    """
+
+    def search(
+        self: sunpy.net.jsoc.JSOCClient,
+        *args: object,
+        **kwargs: object,
+    ) -> astropy.table.Table:
+        """Stand in for a search of JSOC which finds nothing."""
+        return astropy.table.Table({"image": []})
+
+    monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
+
+    with pytest.raises(ValueError, match="no images of `aia.lev1_euv_12s` at 171"):
+        sdo.aia.urls(
+            time_start=_time_start,
+            time_stop=_time_stop,
+            wavelength=171 * u.AA,
+            cache=None,
+        )

@@ -1,13 +1,11 @@
 import joblib
-import functools
 from typing import Literal
 import astropy.units as u
 import astropy.time
 import sunpy.net.attrs
-import sunpy.net.jsoc
 import named_arrays as na
 import sdo
-from .._retry import retry
+from .._data import _search_jsoc
 
 __all__ = [
     "search",
@@ -64,9 +62,8 @@ def search(
     them.
 
     A search which fails for a reason that may pass is made again, as
-    :func:`sdo.download` makes a download again. The retry is made around
-    the cached search, so that the function the cache keys its results by
-    does not change, and the searches it already holds stay valid.
+    :func:`sdo.download` makes a download again, and so is one JSOC answers
+    without the paths of the files, as it does while its storage is down.
 
     Where AIA writes its keywords into the file it serves, the files JSOC
     serves for HMI are the bare image: the primary header has six cards and
@@ -103,16 +100,13 @@ def search(
     if not isinstance(cache, joblib.Memory):
         cache = joblib.Memory(location=cache, verbose=False)
 
-    return retry(
-        functools.partial(
-            cache.cache(_search),
-            time_start=time_start,
-            time_stop=time_stop,
-            series=series,
-            segment=segment,
-            axis_time=axis_time,
-            limit=limit,
-        )
+    return cache.cache(_search)(
+        time_start=time_start,
+        time_stop=time_stop,
+        series=series,
+        segment=segment,
+        axis_time=axis_time,
+        limit=limit,
     )
 
 
@@ -145,9 +139,7 @@ def _search(
 
     url_base = "http://jsoc.stanford.edu"
 
-    client = sunpy.net.jsoc.JSOCClient()
-
-    response = client.search(*attrs)
+    response = _search_jsoc(*attrs, segment=segment)
 
     # HMI has gaps, and a range which falls in one comes back empty. Said
     # here rather than left to `na.stack`, which would raise an `IndexError`
