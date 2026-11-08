@@ -1,5 +1,6 @@
 import pytest
 import pathlib
+import shutil
 import joblib
 import numpy as np
 import astropy.time
@@ -187,10 +188,23 @@ def test_download_cache_str(tmp_path: pathlib.Path):
         time_stop=_time_stop,
     )
 
-    result = sdo.download(urls, cache=str(tmp_path / "cache"))
+    # The images are copied from the default location to where this cache
+    # puts them, so that it finds them there rather than downloading them
+    # from JSOC again.
+    directory = tmp_path / "cache"
+    files = sdo.download(urls)
+    for i in files.ndindex():
+        file = pathlib.Path(files[i].ndarray)
+        copy = directory / file.relative_to(sdo.directory_default)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(file, copy)
+
+    result = sdo.download(urls, cache=str(directory))
 
     for i in result.ndindex():
-        assert pathlib.Path(result[i].ndarray).is_file()
+        path = pathlib.Path(result[i].ndarray)
+        assert path.is_file()
+        assert path.is_relative_to(directory)
 
 
 def test_search_empty():
