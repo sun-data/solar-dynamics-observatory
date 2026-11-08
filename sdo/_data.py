@@ -1,8 +1,10 @@
 import joblib
+import functools
 import pathlib
 import requests
 import named_arrays as na
 import sdo
+from ._retry import retry
 
 __all__ = [
     "download",
@@ -18,6 +20,14 @@ def download(
     """
     Download the given URLs to a specified directory.
     If `overwrite` is :obj:`False`, the file will not be downloaded if it exists.
+
+    JSOC drops connections now and then, so a download which fails for a
+    reason that may pass is made again, up to three times in all, after waits
+    of 10 and then 20 seconds: a connection which cannot be made, or which is
+    dropped, or a server too busy to answer (a status of 408, 429, 500, 502,
+    503, or 504). A server which is slow to answer is not asked again, so as
+    not to add to its load, nor is one which refuses the request, such as
+    with a 404.
 
     This knows nothing about which instrument the URLs came from, so it is
     shared by every instrument in this package.
@@ -76,11 +86,17 @@ def _download(
         path.parent.mkdir(parents=True, exist_ok=True)
 
         if overwrite or not path.exists():
-            r = requests.get(url, timeout=60)
-            r.raise_for_status()
+            content = retry(functools.partial(_get, url))
             with open(path, "wb") as f:
-                f.write(r.content)
+                f.write(content)
 
         result[i] = str(path)
 
     return result
+
+
+def _get(url: str) -> bytes:
+    """Download the contents of a URL, raising an error if the server refuses."""
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return r.content

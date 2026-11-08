@@ -93,6 +93,10 @@ jobs:
           pip install setuptools wheel
           pip install -e ".[test]"
       - name: Test with pytest
+        # Everything these tests open from JSOC was shared by the download
+        # job, so they refuse to contact it, and fail at once if they do.
+        env:
+          SDO_TEST_JSOC: "0"
         run: |
           pip install pytest pytest-cov
           pytest --cov=. --cov-report=xml
