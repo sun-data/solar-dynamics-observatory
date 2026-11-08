@@ -1,6 +1,8 @@
+from typing import Callable
 import pytest
 import pathlib
 import shutil
+import urllib.error
 import warnings
 import joblib
 import numpy as np
@@ -9,9 +11,9 @@ import astropy.time
 import astropy.table
 import astropy.io.fits
 import aiapy.calibrate.utils
-import sunpy.net.jsoc
 import named_arrays as na
 import sdo
+from sdo.conftest import path
 
 _time_start = "2021-09-23T06:00:00"
 _time_stop = "2021-09-23T06:00:12"
@@ -241,30 +243,62 @@ def test_prep_blank(
                 assert hdu.data is not None
 
 
-def test_urls_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_urls_retry(
+    jsoc_searches: Callable[[list], list],
+    sleeps: list[float],
+) -> None:
+    """A search which times out is made again."""
+    timeout = urllib.error.URLError(TimeoutError("timed out"))
+    calls = jsoc_searches([timeout, astropy.table.Table({"image": [path]})])
+
+    result = sdo.aia.urls(
+        time_start=_time_start,
+        time_stop=_time_stop,
+        wavelength=171 * u.AA,
+        cache=None,
+    )
+
+    assert result.ndarray.item(0) == "http://jsoc.stanford.edu" + path
+    assert len(calls) == 2
+    assert sleeps == [10]
+
+
+def test_urls_empty(jsoc_searches: Callable[[list], list]) -> None:
     """
-    A channel whose range holds no images says so, and names the channel
-    and the range.
+    A channel whose range holds no images says so, and names the channel and
+    the range as it was asked for, which a limit moves the start of.
 
-    AIA has gaps, in a channel or in all of them, and JSOC answers a search
-    of a range which falls in one with no rows, which a search which does
-    the same stands in for here.
+    AIA has gaps, in a channel or in all of them. JSOC answers a search of a
+    range which falls in one with no rows, as :func:`test_urls_empty_jsoc`
+    checks, and a search which does the same stands in for it here.
     """
+    jsoc_searches([astropy.table.Table({"image": []})])
 
-    def search(
-        self: sunpy.net.jsoc.JSOCClient,
-        *args: object,
-        **kwargs: object,
-    ) -> astropy.table.Table:
-        """Stand in for a search of JSOC which finds nothing."""
-        return astropy.table.Table({"image": []})
-
-    monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
-
-    with pytest.raises(ValueError, match="no images of `aia.lev1_euv_12s` at 171"):
+    match = (
+        "no images of `aia.lev1_euv_12s` at 171.0 Angstrom were found "
+        "between 2021-09-23T06:00:00.000 and 2021-09-23T07:00:00.000"
+    )
+    with pytest.raises(ValueError, match=match):
         sdo.aia.urls(
-            time_start=_time_start,
-            time_stop=_time_stop,
+            time_start="2021-09-23T06:00:00",
+            time_stop="2021-09-23T07:00:00",
+            wavelength=171 * u.AA,
+            limit=10,
+            cache=None,
+        )
+
+
+@pytest.mark.jsoc
+def test_urls_empty_jsoc() -> None:
+    """
+    JSOC answers a search of a range which holds no images with no rows,
+    which :func:`test_urls_empty` stands in for. AIA began observing in
+    2010 March.
+    """
+    with pytest.raises(ValueError, match="no images of"):
+        sdo.aia.urls(
+            time_start="2010-01-01T00:00:00",
+            time_stop="2010-01-01T00:01:00",
             wavelength=171 * u.AA,
             cache=None,
         )

@@ -97,6 +97,9 @@ def _urls(
         sunpy.net.attrs.jsoc.Series(series),
     )
 
+    # the range as it was asked for, since a limit moves its start
+    between = f"between {time_start.isot} and {time_stop.isot}"
+
     if limit is not None:
         timedelta = (time_stop - time_start).to(u.s)
         time_start = time_start + timedelta / 2
@@ -122,8 +125,7 @@ def _urls(
         # channel nor the range which found nothing.
         if len(response) == 0:
             raise ValueError(
-                f"no images of `{series}` at {channel} were found between "
-                f"{time_start.isot} and {time_stop.isot}"
+                f"no images of `{series}` at {channel} were found {between}"
             )
 
         urls_w = []

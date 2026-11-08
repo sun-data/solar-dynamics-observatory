@@ -9,7 +9,6 @@ import urllib.error
 import requests
 
 __all__ = [
-    "Unavailable",
     "retry",
 ]
 
@@ -41,13 +40,6 @@ Waits between the attempts. The tests stand in for this, and not for
 """
 
 
-class Unavailable(Exception):
-    """
-    JSOC answered, but without what was asked for, as it does while part of
-    it is down, which may pass.
-    """
-
-
 def transient(error: BaseException) -> bool:
     """
     Whether an error of a request to JSOC may pass if the request is made
@@ -55,8 +47,7 @@ def transient(error: BaseException) -> bool:
 
     A connection which could not be made, or which was dropped before the
     whole answer came, may pass, as may an answer of the server in
-    :data:`statuses`, and an answer without what was asked for,
-    :class:`Unavailable`. A request the server answered too slowly is not made
+    :data:`statuses`. A request the server answered too slowly is not made
     again, so as not to add to the load of a server which is already slow,
     and neither is one it refused, or any other error.
 
@@ -89,7 +80,6 @@ def transient(error: BaseException) -> bool:
             ConnectionError,
             http.client.IncompleteRead,
             json.JSONDecodeError,
-            Unavailable,
         ),
     )
 

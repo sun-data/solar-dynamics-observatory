@@ -1,11 +1,13 @@
+from typing import Callable
 import pytest
 import pathlib
 import shutil
+import urllib.error
 import joblib
 import numpy as np
 import astropy.time
+import astropy.table
 import astropy.units as u
-import sunpy.net.jsoc
 import named_arrays as na
 import sdo
 
@@ -208,7 +210,27 @@ def test_download_cache_str(tmp_path: pathlib.Path):
         assert path.is_relative_to(directory)
 
 
-def test_search_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_retry(
+    jsoc_searches: Callable[[list], list],
+    sleeps: list[float],
+) -> None:
+    """A search which times out is made again."""
+    path = "/SUM1/D1/S00000/magnetogram.fits"
+    timeout = urllib.error.URLError(TimeoutError("timed out"))
+    calls = jsoc_searches([timeout, astropy.table.Table({"magnetogram": [path]})])
+
+    result = sdo.hmi.search(
+        time_start=_time_start,
+        time_stop=_time_stop,
+        cache=None,
+    )
+
+    assert result["url"].ndarray.item(0) == "http://jsoc.stanford.edu" + path
+    assert len(calls) == 2
+    assert sleeps == [10]
+
+
+def test_search_empty(jsoc_searches: Callable[[list], list]) -> None:
     """
     A range which holds no images says so.
 
@@ -220,15 +242,7 @@ def test_search_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     the tests.
     """
 
-    def search(
-        self: sunpy.net.jsoc.JSOCClient,
-        *args: object,
-        **kwargs: object,
-    ) -> list:
-        """Stand in for a search of JSOC which finds nothing."""
-        return []
-
-    monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
+    jsoc_searches([[]])
 
     with pytest.raises(ValueError, match="no images of"):
         sdo.hmi.search(
