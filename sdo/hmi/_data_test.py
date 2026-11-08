@@ -5,6 +5,7 @@ import joblib
 import numpy as np
 import astropy.time
 import astropy.units as u
+import sunpy.net.jsoc
 import named_arrays as na
 import sdo
 
@@ -207,13 +208,27 @@ def test_download_cache_str(tmp_path: pathlib.Path):
         assert path.is_relative_to(directory)
 
 
-def test_search_empty():
+def test_search_empty(monkeypatch: pytest.MonkeyPatch):
     """
     A range which holds no images says so.
 
     HMI has gaps, and `sdo.hmi.open` searches a range only one cadence wide,
-    so this is reachable by asking for a moment during one.
+    so this is reachable by asking for a moment during one. JSOC answers
+    such a search with no rows, and a search which does the same stands in
+    for it here, since one which finds nothing cannot be cached, and would
+    contact JSOC from every job of the tests.
     """
+
+    def search(
+        self: sunpy.net.jsoc.JSOCClient,
+        *args: object,
+        **kwargs: object,
+    ) -> list:
+        """Stand in for a search of JSOC which finds nothing."""
+        return []
+
+    monkeypatch.setattr(sunpy.net.jsoc.JSOCClient, "search", search)
+
     with pytest.raises(ValueError, match="no images of"):
         sdo.hmi.search(
             time_start="2010-01-01T00:00:00",
